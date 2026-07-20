@@ -1,5 +1,6 @@
 name: Build Windows framework-dependent
 
+# Verification branch is based on the current master; application sources are unchanged.
 on:
   workflow_dispatch:
   pull_request:
