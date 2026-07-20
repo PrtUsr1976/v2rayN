@@ -1,0 +1,26 @@
+name: Cleanup temporary branches
+
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.head_ref == 'maintenance/cleanup-branches'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Delete temporary branches
+        shell: bash
+        run: |
+          git push origin --delete agent/agent-v-subscription-headers || true
+          git push origin --delete build/verify-master-framework-dependent || true
+          git push origin --delete maintenance/cleanup-branches || true
