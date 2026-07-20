@@ -102,10 +102,22 @@ public static class SubscriptionHandler
             ? userAgent
             : agentVHeaders.UserAgent;
 
+        if (effectiveUserAgent.IsNullOrEmpty())
+        {
+            effectiveUserAgent = Utils.GetVersion(false);
+        }
+
+        var hasBasicAuthorization = Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                                    && uri.UserInfo.IsNotEmpty();
+        Logging.SaveLog(AgentVSubscriptionService.BuildRequestHeadersLog(
+            effectiveUserAgent,
+            agentVHeaders.Headers,
+            hasBasicAuthorization));
+
         var result = await downloadHandle.TryDownloadString(
             url,
             blProxy,
-            effectiveUserAgent ?? string.Empty,
+            effectiveUserAgent,
             agentVHeaders.Headers);
 
         // If download with proxy fails, try direct connection
@@ -114,7 +126,7 @@ public static class SubscriptionHandler
             result = await downloadHandle.TryDownloadString(
                 url,
                 false,
-                effectiveUserAgent ?? string.Empty,
+                effectiveUserAgent,
                 agentVHeaders.Headers);
         }
 
