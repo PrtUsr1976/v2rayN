@@ -37,4 +37,23 @@ public class AgentVSubscriptionServiceTests
 
         Assert.True(result.IsEmpty);
     }
+
+    [Fact]
+    public void BuildLogMessage_ContainsNormalizedHeaders()
+    {
+        var headers = new AgentVRequestHeaders(
+            "Throne/1.1.6",
+            new Dictionary<string, string>
+            {
+                ["x-hwid"] = "test-hwid",
+                ["x-device-os"] = "Windows"
+            });
+
+        var message = AgentVSubscriptionService.BuildLogMessage(headers);
+
+        Assert.Contains("SUBSCRIPTION REQUEST HEADERS (agent_v)", message);
+        Assert.Contains("User-Agent=Throne/1.1.6", message);
+        Assert.Contains("x-hwid=test-hwid", message);
+        Assert.Contains("x-device-os=Windows", message);
+    }
 }
