@@ -33,11 +33,11 @@ jobs:
 
       - name: Publish v2rayN
         working-directory: ./v2rayN
-        run: dotnet publish ./v2rayN/v2rayN.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:EnableWindowsTargeting=true -o "${{ github.workspace }}/publish"
+        run: dotnet publish ./v2rayN/v2rayN.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=false -p:EnableWindowsTargeting=true -o "${{ github.workspace }}/publish"
 
       - name: Publish AmazTool
         working-directory: ./v2rayN
-        run: dotnet publish ./AmazTool/AmazTool.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false -p:EnableWindowsTargeting=true -o "${{ github.workspace }}/publish"
+        run: dotnet publish ./AmazTool/AmazTool.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=false -p:PublishTrimmed=false -p:EnableWindowsTargeting=true -o "${{ github.workspace }}/publish"
 
       - name: Remove debug symbols
         shell: pwsh
