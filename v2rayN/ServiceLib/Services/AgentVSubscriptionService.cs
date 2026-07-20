@@ -20,7 +20,6 @@ public static class AgentVSubscriptionService
         var path = ResolvePath(configuredPath);
         if (!File.Exists(path))
         {
-            Logging.SaveLog(BuildLogMessage(AgentVRequestHeaders.Empty));
             return AgentVRequestHeaders.Empty;
         }
 
@@ -61,9 +60,7 @@ public static class AgentVSubscriptionService
                 }
             }
 
-            var result = new AgentVRequestHeaders(userAgent, headers);
-            Logging.SaveLog(BuildLogMessage(result));
-            return result;
+            return new AgentVRequestHeaders(userAgent, headers);
         }
         catch (Exception ex)
         {
@@ -72,27 +69,30 @@ public static class AgentVSubscriptionService
         }
     }
 
-    public static string BuildLogMessage(AgentVRequestHeaders requestHeaders)
+    public static string BuildRequestHeadersLog(
+        string userAgent,
+        IReadOnlyDictionary<string, string>? requestHeaders,
+        bool hasBasicAuthorization)
     {
         var lines = new List<string>
         {
-            "SUBSCRIPTION REQUEST HEADERS (agent_v)"
+            "SUBSCRIPTION REQUEST HEADERS",
+            $"User-Agent={userAgent}"
         };
 
-        if (requestHeaders.IsEmpty)
+        if (requestHeaders is { Count: > 0 })
         {
-            lines.Add("agent_v not found or contains no valid headers");
-            return string.Join(Environment.NewLine, lines);
+            foreach (var header in requestHeaders
+                         .Where(x => !x.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                lines.Add($"{header.Key}={header.Value}");
+            }
         }
 
-        if (!string.IsNullOrWhiteSpace(requestHeaders.UserAgent))
+        if (hasBasicAuthorization)
         {
-            lines.Add($"User-Agent={requestHeaders.UserAgent}");
-        }
-
-        foreach (var header in requestHeaders.Headers.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            lines.Add($"{header.Key}={header.Value}");
+            lines.Add("Authorization=Basic ***");
         }
 
         return string.Join(Environment.NewLine, lines);
