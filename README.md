@@ -1,7 +1,7 @@
-# v2rayN — custom fork
+# v2rayN — custom Windows build
 
 <p align="center">
-  <a href="#english">English</a> ·
+  <a href="#custom-windows-build">English</a> ·
   <a href="#русский">Русский</a>
 </p>
 
@@ -12,54 +12,46 @@
 </p>
 
 > [!NOTE]
-> This is a custom fork of [2dust/v2rayN](https://github.com/2dust/v2rayN), not the official upstream repository.
+> This is an unofficial customized build based on [2dust/v2rayN](https://github.com/2dust/v2rayN). It is not the official upstream repository.
 
----
+## Custom Windows build
 
-<a id="english"></a>
+This repository contains a customized v2rayN build focused on more reliable TUN startup, custom subscription HTTP headers, improved diagnostics, and lightweight Windows packages.
 
-## English
+### TUN startup reliability
 
-### About
+This build addresses cases where v2rayN TUN mode does not start reliably after Windows logon or on the first application launch and begins working only after restarting v2rayN.
 
-This repository is a custom fork of **v2rayN**, a graphical proxy client based on the upstream project [2dust/v2rayN](https://github.com/2dust/v2rayN). It supports [Xray](https://github.com/XTLS/Xray-core), [sing-box](https://github.com/SagerNet/sing-box) and other compatible proxy cores.
+The custom startup flow supports delayed TUN activation:
 
-This fork adds custom subscription headers and User-Agent support, fixes or mitigates Windows TUN startup hangs, adds automatic TUN startup retries, and provides three convenient Windows x64 build variants.
+```text
+v2rayN.exe -tundelay <seconds>
+```
 
-**Search keywords:** v2rayN TUN hang fix, Wintun startup retry, custom User-Agent, subscription headers, HWID, `agent_v`, `-tundelay`.
+A positive delay starts v2rayN with TUN disabled and enables TUN after the specified number of seconds. With `-tundelay 0`, TUN is not enabled automatically.
 
-### Differences from the upstream project
+For Windows TUN sessions using Xray or sing-box, the custom startup logic also:
 
-| Area | Upstream project | This fork |
-|---|---|---|
-| Subscription User-Agent | Standard request behavior | Reads `user_agent` from a global `agent_v` file and sends it as the `User-Agent` header |
-| Additional subscription headers | Standard headers | Adds `x-hwid`, `x-device-os`, `x-ver-os` and `x-device-model` from `agent_v` |
-| Header scope | Standard subscription processing | Applies custom headers to the main URL, additional URLs, proxy requests and fallback requests |
-| TUN startup hangs | Standard core startup | Detects failed Xray or sing-box TUN startup and retries it automatically on Windows |
-| TUN retry policy | No custom retry mechanism from this fork | Up to 3 attempts with a 5-second delay between attempts |
-| Delayed TUN startup | Standard startup behavior | Adds `-tundelay <seconds>`: the selected server starts first without TUN, then TUN is enabled later |
-| Failed TUN fallback | Standard behavior | After all retries fail, disables TUN and starts the selected server without TUN |
-| Manual TUN disable | Standard reload behavior | Cancels startup observation promptly when TUN is disabled manually |
-| Fine tuning | Standard settings | Creates `finetunes.ini` with configurable `TunStartObservationSeconds` in the range 20–300 seconds |
-| Diagnostics | Standard logging | Adds detailed core stop, kill, timeout, exit and TUN retry logging |
-| Windows builds | Upstream release workflows | Adds separate manual Light, Medium and Full Windows x64 workflows |
-| Included custom configuration | Standard build output | Places the configured `agent_v` file next to `v2rayN.exe` in all three custom builds |
+- observes the newly started core for a configurable period;
+- retries startup up to three times when the core exits during that period;
+- waits five seconds between attempts;
+- disables TUN and starts the selected server without TUN if every attempt fails.
 
-### Download custom builds
+The observation period is stored in `finetunes.ini`:
 
-Open [GitHub Actions](https://github.com/PrtUsr1976/v2rayN/actions), select the required workflow and click **Run workflow**. After the run completes, open it and download the generated artifact.
+```ini
+TunStartObservationSeconds=20
+```
 
-| Build | Contents | Requirements | Workflow |
-|---|---|---|---|
-| **Light** | Application and libraries; no bundled .NET; no proxy cores | Install the required .NET Desktop Runtime separately | [Build Windows Light](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-framework-dependent.yml) |
-| **Medium** | Application, libraries and bundled .NET; no proxy cores | No separate .NET installation required | [Build Windows Medium](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-self-contained.yml) |
-| **Full** | Application, bundled .NET and proxy cores | Complete ready-to-use archive | [Build Windows Full](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-full.yml) |
+Valid values are 20–300 seconds. These changes improve startup recovery but do not guarantee that every possible Windows, driver, network, Xray, or sing-box TUN problem is fixed.
 
-All three custom workflows are manual-only, target Windows x64 and include `agent_v` next to `v2rayN.exe`.
+See [TUN startup fix and diagnostics](docs/TUN_STARTUP_FIX.md) for details.
 
-### `agent_v` configuration
+### Custom subscription HTTP headers
 
-Example:
+Subscription requests can use custom HTTP headers loaded from the `agent_v` file. The application logs the effective subscription request headers for diagnostics.
+
+Example `agent_v`:
 
 ```ini
 user_agent=Throne/1.1.6
@@ -69,9 +61,7 @@ x_ver_os=10.0.17763
 x_device_model=VirtualBox
 ```
 
-Supported mappings:
-
-| Key | HTTP header |
+| `agent_v` key | HTTP header |
 |---|---|
 | `user_agent` | `User-Agent` |
 | `x_hwid` | `x-hwid` |
@@ -79,36 +69,27 @@ Supported mappings:
 | `x_ver_os` | `x-ver-os` |
 | `x_device_model` | `x-device-model` |
 
-The parser supports UTF-8 BOM, CRLF, blank lines, comments beginning with `;` or `#`, whitespace around keys and values, and duplicate keys where the last value wins.
+By default, `agent_v` is read from the application directory. A different path can be supplied through the `V2RAYN_AGENT_V_PATH` environment variable.
 
-### Delayed and resilient TUN startup
+The parser accepts UTF-8, blank lines, comments beginning with `;` or `#`, whitespace around keys and values, and duplicate keys where the last value wins.
 
-Enable TUN after a delay:
+### Windows packages
 
-```text
-v2rayN.exe -tundelay 30
-```
+A lightweight Windows x64 package is available in [GitHub Releases](https://github.com/PrtUsr1976/v2rayN/releases). It does not bundle .NET or proxy cores, so the required .NET Desktop Runtime and cores must be installed or added separately.
 
-Start without TUN and leave TUN activation to the user:
+The following manual GitHub Actions workflows are also available:
 
-```text
-v2rayN.exe -tundelay 0
-```
+| Build | Contents | Requirements |
+|---|---|---|
+| [Light](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-framework-dependent.yml) | Application and libraries; no bundled .NET; no proxy cores | Install .NET Desktop Runtime and add the required cores |
+| [Medium](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-self-contained.yml) | Application and bundled .NET; no proxy cores | Add the required cores |
+| [Full](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-full.yml) | Application, bundled .NET, and proxy cores | Ready-to-use package |
 
-TUN startup observation is configured in `finetunes.ini`:
+All three custom workflows target Windows x64 and include `agent_v` next to `v2rayN.exe`.
 
-```ini
-TunStartObservationSeconds=20
-```
+### Search terms
 
-Valid values are from 20 to 300 seconds. Invalid values are automatically replaced with `20`.
-
-### Links
-
-- [This fork](https://github.com/PrtUsr1976/v2rayN)
-- [Custom build workflows](https://github.com/PrtUsr1976/v2rayN/actions)
-- [Upstream project](https://github.com/2dust/v2rayN)
-- [Upstream documentation](https://github.com/2dust/v2rayN/wiki)
+`v2rayN TUN does not start`, `v2rayN TUN startup problem`, `v2rayN TUN first launch`, `v2rayN TUN hangs`, `v2rayN TUN freeze`, `v2rayN agent_v`, `v2rayN custom HTTP headers`.
 
 ---
 
@@ -116,92 +97,39 @@ Valid values are from 20 to 300 seconds. Invalid values are automatically replac
 
 ## Русский
 
-### О проекте
+### Исправление запуска TUN
 
-Это модифицированный форк **v2rayN**, графического прокси-клиента на основе родительского проекта [2dust/v2rayN](https://github.com/2dust/v2rayN). Поддерживаются [Xray](https://github.com/XTLS/Xray-core), [sing-box](https://github.com/SagerNet/sing-box) и другие совместимые прокси-ядра.
+Эта модификация предназначена для случаев, когда режим TUN в v2rayN не запускается после входа в Windows, не работает при первом запуске или начинает работать только после повторного запуска программы.
 
-В форке добавлены собственный User-Agent и дополнительные заголовки запросов подписки, исправлено или минимизировано зависание запуска TUN в Windows, добавлены автоматические повторные попытки запуска TUN и три варианта сборки для Windows x64.
-
-**Ключевые слова для поиска:** v2rayN исправлено зависание TUN, зависает Wintun, повторный запуск TUN, добавлен User-Agent, заголовки подписки, HWID, `agent_v`, `-tundelay`.
-
-### Отличия от родительского проекта
-
-| Область | Родительский проект | Этот форк |
-|---|---|---|
-| User-Agent подписки | Стандартное поведение запросов | Читает `user_agent` из общего файла `agent_v` и отправляет его в заголовке `User-Agent` |
-| Дополнительные заголовки | Стандартный набор заголовков | Добавляет `x-hwid`, `x-device-os`, `x-ver-os` и `x-device-model` из `agent_v` |
-| Область применения заголовков | Стандартная обработка подписок | Использует заголовки для основной ссылки, дополнительных ссылок, запросов через прокси и резервных запросов |
-| Зависание запуска TUN | Стандартный запуск ядра | Обнаруживает неудачный запуск TUN через Xray или sing-box и автоматически повторяет его в Windows |
-| Повторные попытки TUN | Нет механизма, добавленного этим форком | До 3 попыток с паузой 5 секунд между ними |
-| Отложенный запуск TUN | Стандартный запуск | Добавлен параметр `-tundelay <секунды>`: сначала запускается сервер без TUN, затем включается TUN |
-| Резервный режим | Стандартное поведение | Если все попытки запуска TUN неудачны, TUN отключается и выбранный сервер запускается без него |
-| Ручное отключение TUN | Стандартная перезагрузка конфигурации | Наблюдение за запуском немедленно отменяется при ручном отключении TUN |
-| Тонкая настройка | Стандартные настройки | Создаётся `finetunes.ini` с параметром `TunStartObservationSeconds` в диапазоне 20–300 секунд |
-| Диагностика | Стандартный журнал | Добавлено подробное журналирование остановки ядра, завершения процесса, тайм-аутов и повторных запусков TUN |
-| Сборки Windows | Штатные workflow родительского проекта | Добавлены отдельные ручные сборки Light, Medium и Full для Windows x64 |
-| Пользовательская конфигурация | Стандартный состав сборки | Во все три сборки рядом с `v2rayN.exe` добавляется настроенный файл `agent_v` |
-
-### Загрузка сборок
-
-Откройте раздел [GitHub Actions](https://github.com/PrtUsr1976/v2rayN/actions), выберите нужный workflow и нажмите **Run workflow**. После завершения откройте запуск и скачайте созданный артефакт.
-
-| Сборка | Состав | Требования | Workflow |
-|---|---|---|---|
-| **Light** | Приложение и библиотеки; без встроенного .NET; без прокси-ядер | Требуется отдельно установить подходящий .NET Desktop Runtime | [Build Windows Light](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-framework-dependent.yml) |
-| **Medium** | Приложение, библиотеки и встроенный .NET; без прокси-ядер | Отдельная установка .NET не требуется | [Build Windows Medium](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-self-contained.yml) |
-| **Full** | Приложение, встроенный .NET и прокси-ядра | Полный готовый к работе архив | [Build Windows Full](https://github.com/PrtUsr1976/v2rayN/actions/workflows/build-windows-full.yml) |
-
-Все три пользовательские сборки запускаются только вручную, предназначены для Windows x64 и содержат `agent_v` рядом с `v2rayN.exe`.
-
-### Настройка `agent_v`
-
-Пример:
-
-```ini
-user_agent=Throne/1.1.6
-x_hwid=00000000-0000-0000-0000-000000000000
-x_device_os=Windows
-x_ver_os=10.0.17763
-x_device_model=VirtualBox
-```
-
-Соответствие параметров заголовкам:
-
-| Параметр | HTTP-заголовок |
-|---|---|
-| `user_agent` | `User-Agent` |
-| `x_hwid` | `x-hwid` |
-| `x_device_os` | `x-device-os` |
-| `x_ver_os` | `x-ver-os` |
-| `x_device_model` | `x-device-model` |
-
-Парсер поддерживает UTF-8 BOM, переводы строк CRLF, пустые строки, комментарии с `;` или `#`, пробелы вокруг ключей и значений, а также повторяющиеся ключи — используется последнее значение.
-
-### Отложенный и устойчивый запуск TUN
-
-Включить TUN после задержки:
+Параметр:
 
 ```text
-v2rayN.exe -tundelay 30
+v2rayN.exe -tundelay <секунды>
 ```
 
-Запустить без TUN и оставить его включение пользователю:
+позволяет сначала запустить программу без TUN, а затем включить TUN с заданной задержкой. При `-tundelay 0` автоматическое включение TUN отключено.
 
-```text
-v2rayN.exe -tundelay 0
-```
+Для Xray и sing-box в Windows также добавлены наблюдение за запуском TUN, до трёх попыток с паузой пять секунд и переход к запуску выбранного сервера без TUN, если все попытки завершились неудачно. Время наблюдения задаётся параметром `TunStartObservationSeconds` в файле `finetunes.ini`.
 
-Время наблюдения за запуском TUN задаётся в `finetunes.ini`:
+Изменения повышают надёжность запуска и упрощают диагностику, но не гарантируют устранение всех возможных проблем TUN, драйверов или сети.
 
-```ini
-TunStartObservationSeconds=20
-```
+Подробности: [docs/TUN_STARTUP_FIX.md](docs/TUN_STARTUP_FIX.md).
 
-Допустимый диапазон — от 20 до 300 секунд. Недопустимое значение автоматически заменяется на `20`.
+### Пользовательские заголовки подписки
 
-### Ссылки
+Добавлена загрузка пользовательских HTTP-заголовков запросов подписки из файла `agent_v` и их диагностическое логирование. Поддерживаются `User-Agent`, `x-hwid`, `x-device-os`, `x-ver-os` и `x-device-model`.
 
-- [Этот форк](https://github.com/PrtUsr1976/v2rayN)
-- [Пользовательские сборки](https://github.com/PrtUsr1976/v2rayN/actions)
-- [Родительский проект](https://github.com/2dust/v2rayN)
-- [Документация родительского проекта](https://github.com/2dust/v2rayN/wiki)
+### Сборки Windows
+
+В [GitHub Releases](https://github.com/PrtUsr1976/v2rayN/releases) опубликована лёгкая Windows x64-сборка без встроенного .NET и без прокси-ядер. Ручные workflow в [GitHub Actions](https://github.com/PrtUsr1976/v2rayN/actions) позволяют также собрать варианты Medium и Full.
+
+**Ключевые слова:** `v2rayN TUN не запускается`, `v2rayN зависает TUN`, `v2rayN TUN запускается только со второго раза`, `v2rayN agent_v`, `v2rayN пользовательские HTTP-заголовки`.
+
+## Upstream project, license, and credits
+
+- Upstream project: [2dust/v2rayN](https://github.com/2dust/v2rayN)
+- Upstream documentation: [v2rayN Wiki](https://github.com/2dust/v2rayN/wiki)
+- Proxy cores: [Xray-core](https://github.com/XTLS/Xray-core) and [sing-box](https://github.com/SagerNet/sing-box)
+- License: [GNU General Public License v3.0](LICENSE)
+
+Thanks to the upstream v2rayN maintainers, contributors, translators, and the developers of the supported proxy cores.
