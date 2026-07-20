@@ -69,6 +69,32 @@ public static class AgentVSubscriptionService
         }
     }
 
+    public static string BuildLogMessage(AgentVRequestHeaders requestHeaders)
+    {
+        var lines = new List<string>
+        {
+            "SUBSCRIPTION REQUEST HEADERS (agent_v)"
+        };
+
+        if (requestHeaders.IsEmpty)
+        {
+            lines.Add("agent_v not found or contains no valid headers");
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestHeaders.UserAgent))
+        {
+            lines.Add($"User-Agent={requestHeaders.UserAgent}");
+        }
+
+        foreach (var header in requestHeaders.Headers.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            lines.Add($"{header.Key}={header.Value}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
     private static string ResolvePath(string? configuredPath)
     {
         var path = configuredPath?.Trim() ?? string.Empty;
