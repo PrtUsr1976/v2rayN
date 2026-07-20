@@ -19,6 +19,10 @@ public class CoreManager
     private long _loadCoreSequence;
     private const string _tag = "CoreHandler";
 
+    private const int TunStartMaxAttempts = 3;
+    private const int TunStartObservationMs = 20000;
+    private const int TunStartRetryDelayMs = 5000;
+
     public async Task Init(Config config, Func<bool, string, Task> updateFunc)
     {
         _config = config;
@@ -98,35 +102,24 @@ public class CoreManager
         await LogLifecycle(false, $"Core load #{loadId}: previous core stop completed.");
         await Task.Delay(100);
 
-        if (Utils.IsWindows() && _config.TunModeItem.EnableTun)
+        var retryTunStart = Utils.IsWindows()
+                            && _config.TunModeItem.EnableTun
+                            && mainContext.RunCoreType == ECoreType.Xray;
+
+        var started = retryTunStart
+            ? await StartXrayTunWithRetry(mainContext, loadId)
+            : await StartMainCoreOnce(mainContext, loadId, _config.TunModeItem.EnableTun);
+
+        if (!started && retryTunStart)
         {
-            await Task.Delay(100);
-            await LogLifecycle(false, $"Core load #{loadId}: checking whether an old TUN device is still visible.");
-
-            var tunReleased = await WindowsUtils.WaitForTunDevicesReleased(30000);
-            if (!tunReleased)
-            {
-                await LogLifecycle(true,
-                    $"Core load #{loadId}: cancelled. An old TUN device remained visible for 30 seconds; " +
-                    "the new Xray process was not started.");
-                return;
-            }
-
-            await LogLifecycle(false, $"Core load #{loadId}: TUN device check completed; startup may continue.");
+            started = await StartWithoutTunFallback(mainContext, preContext, loadId);
         }
 
-        await LogLifecycle(false, $"Core load #{loadId}: starting the main core process.");
-        await CoreStart(mainContext);
-
-        if (_processService == null)
+        if (!started || _processService == null)
         {
             await LogLifecycle(true, $"Core load #{loadId}: the main core process failed to start.");
             return;
         }
-
-        await LogLifecycle(false,
-            $"Core load #{loadId}: main core process started; PID={_processService.Id}, " +
-            $"core={mainContext.RunCoreType}, TUN={_config.TunModeItem.EnableTun}.");
 
         await WaitForProxyPort(preContext);
         await CoreStartPreService(preContext);
@@ -144,7 +137,7 @@ public class CoreManager
             await UpdateFunc(true, $"{node.GetSummary()}");
         }
 
-        await LogLifecycle(false, $"Core load #{loadId}: completed.");
+        await LogLifecycle(false, $"Core load #{loadId}: completed; effective TUN={_config.TunModeItem.EnableTun}.");
     }
 
     public async Task<ProcessService?> LoadCoreConfigSpeedtest(List<ServerTestItem> selecteds)
@@ -219,6 +212,123 @@ public class CoreManager
     }
 
     #region Private
+
+    private async Task<bool> StartMainCoreOnce(CoreConfigContext context, long loadId, bool tunEnabled)
+    {
+        await LogLifecycle(false, $"Core load #{loadId}: starting the main core process; TUN={tunEnabled}.");
+        await CoreStart(context);
+
+        if (_processService == null)
+        {
+            await LogLifecycle(true, $"Core load #{loadId}: main core start returned no process; TUN={tunEnabled}.");
+            return false;
+        }
+
+        await LogLifecycle(false,
+            $"Core load #{loadId}: main core process started; PID={_processService.Id}, " +
+            $"core={context.RunCoreType}, TUN={tunEnabled}.");
+        return true;
+    }
+
+    private async Task<bool> StartXrayTunWithRetry(CoreConfigContext context, long loadId)
+    {
+        for (var attempt = 1; attempt <= TunStartMaxAttempts; attempt++)
+        {
+            await LogLifecycle(false,
+                $"Core load #{loadId}: Xray TUN start attempt {attempt}/{TunStartMaxAttempts}.");
+
+            await CoreStart(context);
+            var process = _processService;
+
+            if (process == null)
+            {
+                await LogLifecycle(true,
+                    $"Core load #{loadId}: Xray TUN attempt {attempt} did not create a process.");
+            }
+            else
+            {
+                var pid = process.Id;
+                await LogLifecycle(false,
+                    $"Core load #{loadId}: Xray TUN attempt {attempt} started PID={pid}; " +
+                    $"observing it for {TunStartObservationMs / 1000} seconds.");
+
+                var survived = await ProcessSurvivedObservation(process, TunStartObservationMs);
+                if (survived)
+                {
+                    await LogLifecycle(false,
+                        $"Core load #{loadId}: Xray TUN attempt {attempt} succeeded; " +
+                        $"PID={pid} remained running for {TunStartObservationMs / 1000} seconds.");
+                    return true;
+                }
+
+                await LogLifecycle(true,
+                    $"Core load #{loadId}: Xray TUN attempt {attempt} failed; PID={pid} exited during startup observation.");
+
+                process.Dispose();
+                if (ReferenceEquals(_processService, process))
+                {
+                    _processService = null;
+                }
+            }
+
+            if (attempt < TunStartMaxAttempts)
+            {
+                await LogLifecycle(false,
+                    $"Core load #{loadId}: waiting {TunStartRetryDelayMs / 1000} seconds before Xray TUN retry {attempt + 1}.");
+                await Task.Delay(TunStartRetryDelayMs);
+            }
+        }
+
+        await LogLifecycle(true,
+            $"Core load #{loadId}: all {TunStartMaxAttempts} Xray TUN start attempts failed.");
+        return false;
+    }
+
+    private async Task<bool> StartWithoutTunFallback(
+        CoreConfigContext mainContext,
+        CoreConfigContext? preContext,
+        long loadId)
+    {
+        await LogLifecycle(true,
+            $"Core load #{loadId}: disabling TUN and starting the selected server without TUN as fallback.");
+
+        _config.TunModeItem.EnableTun = false;
+        mainContext.AppConfig.TunModeItem.EnableTun = false;
+        if (preContext != null)
+        {
+            preContext.AppConfig.TunModeItem.EnableTun = false;
+        }
+
+        await ConfigHandler.SaveConfig(_config);
+
+        var fileName = Utils.GetBinConfigPath(Global.CoreConfigFileName);
+        var result = await CoreConfigHandler.GenerateClientConfig(mainContext, fileName);
+        if (result.Success != true)
+        {
+            await LogLifecycle(true,
+                $"Core load #{loadId}: fallback configuration generation failed: {result.Msg}");
+            return false;
+        }
+
+        return await StartMainCoreOnce(mainContext, loadId, false);
+    }
+
+    private static async Task<bool> ProcessSurvivedObservation(ProcessService process, int observationMs)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        while (stopwatch.ElapsedMilliseconds < observationMs)
+        {
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            await Task.Delay(250);
+        }
+
+        return !process.HasExited;
+    }
 
     private async Task CoreStart(CoreConfigContext context)
     {
