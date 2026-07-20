@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace ServiceLib.Tests.Services;
 
 public class AgentVSubscriptionServiceTests
