@@ -53,68 +53,100 @@ internal static class WindowsUtils
         }
     }
 
-    public static async Task RemoveTunDevice()
-    {
-        var totalStopwatch = Stopwatch.StartNew();
-        Logging.SaveLog("TUN cleanup: starting removal of old Wintun devices.");
-
-        foreach (var tunName in _tunNameList)
-        {
-            try
-            {
-                var instanceId = GetTunInstanceId(tunName);
-                var presentBefore = IsTunDevicePresent(tunName, instanceId);
-                Logging.SaveLog($"TUN cleanup: device={tunName}, instance={instanceId}, present before removal={presentBefore}.");
-
-                var pnpUtilPath = @"C:\Windows\System32\pnputil.exe";
-                var arg = $$""" /remove-device  "{{instanceId}}" """;
-                var commandStopwatch = Stopwatch.StartNew();
-                var output = await Utils.GetCliWrapOutput(pnpUtilPath, arg);
-                var normalizedOutput = NormalizeCommandOutput(output);
-
-                Logging.SaveLog(
-                    $"TUN cleanup: pnputil finished for {tunName} after {commandStopwatch.ElapsedMilliseconds} ms; " +
-                    $"result={normalizedOutput}.");
-            }
-            catch (Exception ex)
-            {
-                Logging.SaveLog($"TUN cleanup: exception while removing {tunName}: {ex.Message}");
-                Logging.SaveLog(_tag, ex);
-            }
-        }
-
-        await WaitForTunDevicesRemoved(3000);
-        Logging.SaveLog($"TUN cleanup: completed after {totalStopwatch.ElapsedMilliseconds} ms.");
-    }
-
-    private static async Task WaitForTunDevicesRemoved(int timeoutMs)
+    public static async Task<bool> WaitForTunDevicesReleased(int timeoutMs = 30000)
     {
         var stopwatch = Stopwatch.StartNew();
+        var nextProgressLogMs = 0L;
+        var lastSummary = string.Empty;
+
+        Logging.SaveLog($"TUN wait: checking for old Wintun devices; timeout={timeoutMs} ms.");
 
         while (true)
         {
-            var presentDevices = _tunNameList
-                .Select(name => (Name: name, InstanceId: GetTunInstanceId(name)))
-                .Where(item => IsTunDevicePresent(item.Name, item.InstanceId))
-                .Select(item => item.Name)
+            var presentDevices = GetTunDeviceStates()
+                .Where(item => item.RegistryPresent || item.NetworkPresent)
                 .ToList();
 
             if (presentDevices.Count == 0)
             {
-                Logging.SaveLog($"TUN cleanup: no old TUN devices are visible after {stopwatch.ElapsedMilliseconds} ms.");
-                return;
+                if (stopwatch.ElapsedMilliseconds == 0)
+                {
+                    Logging.SaveLog("TUN wait: no old TUN devices are visible; continuing immediately.");
+                }
+                else
+                {
+                    Logging.SaveLog($"TUN wait: old TUN devices disappeared after {stopwatch.ElapsedMilliseconds} ms.");
+                }
+                return true;
+            }
+
+            var summary = string.Join("; ", presentDevices.Select(FormatTunDeviceState));
+            if (!summary.Equals(lastSummary, StringComparison.Ordinal) || stopwatch.ElapsedMilliseconds >= nextProgressLogMs)
+            {
+                Logging.SaveLog($"TUN wait: old device still visible after {stopwatch.ElapsedMilliseconds} ms: {summary}.");
+                lastSummary = summary;
+                nextProgressLogMs = stopwatch.ElapsedMilliseconds + 1000;
             }
 
             if (stopwatch.ElapsedMilliseconds >= timeoutMs)
             {
                 Logging.SaveLog(
-                    $"TUN cleanup: timeout after {stopwatch.ElapsedMilliseconds} ms waiting for device removal; " +
-                    $"still present: {string.Join(", ", presentDevices)}.");
-                return;
+                    $"TUN wait: timeout after {stopwatch.ElapsedMilliseconds} ms; startup with TUN must be cancelled. " +
+                    $"Still visible: {summary}.");
+                return false;
             }
 
-            await Task.Delay(200);
+            await Task.Delay(250);
         }
+    }
+
+    private static List<TunDeviceState> GetTunDeviceStates()
+    {
+        var result = new List<TunDeviceState>();
+        NetworkInterface[] adapters;
+
+        try
+        {
+            adapters = NetworkInterface.GetAllNetworkInterfaces();
+        }
+        catch (Exception ex)
+        {
+            Logging.SaveLog("TUN wait: failed to enumerate network interfaces: " + ex.Message);
+            adapters = [];
+        }
+
+        foreach (var tunName in _tunNameList)
+        {
+            var instanceId = GetTunInstanceId(tunName);
+            var registryPresent = false;
+            var networkPresent = false;
+
+            try
+            {
+                var registryPath = $@"SYSTEM\CurrentControlSet\Enum\{instanceId}";
+                using var regKey = Registry.LocalMachine.OpenSubKey(registryPath, false);
+                registryPresent = regKey != null;
+            }
+            catch (Exception ex)
+            {
+                Logging.SaveLog($"TUN wait: registry check failed for {tunName}: {ex.Message}");
+            }
+
+            try
+            {
+                networkPresent = adapters.Any(adapter =>
+                    adapter.Name.Equals(tunName, StringComparison.OrdinalIgnoreCase) ||
+                    adapter.Description.Contains(tunName, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                Logging.SaveLog($"TUN wait: network interface check failed for {tunName}: {ex.Message}");
+            }
+
+            result.Add(new TunDeviceState(tunName, instanceId, registryPresent, networkPresent));
+        }
+
+        return result;
     }
 
     private static string GetTunInstanceId(string tunName)
@@ -124,45 +156,15 @@ internal static class WindowsUtils
         return $@"SWD\Wintun\{{{guid}}}";
     }
 
-    private static bool IsTunDevicePresent(string tunName, string instanceId)
+    private static string FormatTunDeviceState(TunDeviceState state)
     {
-        try
-        {
-            var registryPath = $@"SYSTEM\CurrentControlSet\Enum\{instanceId}";
-            using var regKey = Registry.LocalMachine.OpenSubKey(registryPath, false);
-            if (regKey != null)
-            {
-                return true;
-            }
-        }
-        catch (Exception ex)
-        {
-            Logging.SaveLog($"TUN cleanup: registry check failed for {tunName}: {ex.Message}");
-        }
-
-        try
-        {
-            return NetworkInterface.GetAllNetworkInterfaces().Any(adapter =>
-                adapter.Name.Equals(tunName, StringComparison.OrdinalIgnoreCase) ||
-                adapter.Description.Contains(tunName, StringComparison.OrdinalIgnoreCase));
-        }
-        catch (Exception ex)
-        {
-            Logging.SaveLog($"TUN cleanup: network interface check failed for {tunName}: {ex.Message}");
-            return false;
-        }
+        return $"device={state.Name}, instance={state.InstanceId}, " +
+               $"registry={state.RegistryPresent}, network={state.NetworkPresent}";
     }
 
-    private static string NormalizeCommandOutput(string? output)
-    {
-        if (output.IsNullOrEmpty())
-        {
-            return "<no successful output>";
-        }
-
-        return output!
-            .Replace("\r", string.Empty)
-            .Replace("\n", " | ")
-            .Trim(' ', '|');
-    }
+    private sealed record TunDeviceState(
+        string Name,
+        string InstanceId,
+        bool RegistryPresent,
+        bool NetworkPresent);
 }
