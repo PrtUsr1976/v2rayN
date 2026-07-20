@@ -13,6 +13,7 @@ public static class SubscriptionHandler
             return;
         }
 
+        var agentVHeaders = AgentVSubscriptionService.Load();
         var successCount = 0;
         foreach (var item in subItem)
         {
@@ -35,7 +36,7 @@ public static class SubscriptionHandler
                 await updateFunc?.Invoke(false, $"{hashCode}{ResUI.MsgStartGettingSubscriptions}");
 
                 // Get all subscription content (main subscription + additional subscriptions)
-                var result = await DownloadAllSubscriptions(config, item, blProxy, downloadHandle);
+                var result = await DownloadAllSubscriptions(config, item, blProxy, downloadHandle, agentVHeaders);
 
                 // Process download result
                 if (await ProcessDownloadResult(config, item.Id, result, hashCode, updateFunc))
@@ -90,34 +91,61 @@ public static class SubscriptionHandler
         return downloadHandle;
     }
 
-    private static async Task<string> DownloadSubscriptionContent(DownloadService downloadHandle, string url, bool blProxy, string userAgent)
+    private static async Task<string> DownloadSubscriptionContent(
+        DownloadService downloadHandle,
+        string url,
+        bool blProxy,
+        string userAgent,
+        AgentVRequestHeaders agentVHeaders)
     {
-        var result = await downloadHandle.TryDownloadString(url, blProxy, userAgent);
+        var effectiveUserAgent = string.IsNullOrWhiteSpace(agentVHeaders.UserAgent)
+            ? userAgent
+            : agentVHeaders.UserAgent;
+
+        var result = await downloadHandle.TryDownloadString(
+            url,
+            blProxy,
+            effectiveUserAgent ?? string.Empty,
+            agentVHeaders.Headers);
 
         // If download with proxy fails, try direct connection
         if (blProxy && result.IsNullOrEmpty())
         {
-            result = await downloadHandle.TryDownloadString(url, false, userAgent);
+            result = await downloadHandle.TryDownloadString(
+                url,
+                false,
+                effectiveUserAgent ?? string.Empty,
+                agentVHeaders.Headers);
         }
 
         return result ?? string.Empty;
     }
 
-    private static async Task<string> DownloadAllSubscriptions(Config config, SubItem item, bool blProxy, DownloadService downloadHandle)
+    private static async Task<string> DownloadAllSubscriptions(
+        Config config,
+        SubItem item,
+        bool blProxy,
+        DownloadService downloadHandle,
+        AgentVRequestHeaders agentVHeaders)
     {
         // Download main subscription content
-        var result = await DownloadMainSubscription(config, item, blProxy, downloadHandle);
+        var result = await DownloadMainSubscription(config, item, blProxy, downloadHandle, agentVHeaders);
 
         // Process additional subscription links (if any)
         if (item.ConvertTarget.IsNullOrEmpty() && item.MoreUrl.TrimEx().IsNotEmpty())
         {
-            result = await DownloadAdditionalSubscriptions(item, result, blProxy, downloadHandle);
+            result = await DownloadAdditionalSubscriptions(item, result, blProxy, downloadHandle, agentVHeaders);
         }
 
         return result;
     }
 
-    private static async Task<string> DownloadMainSubscription(Config config, SubItem item, bool blProxy, DownloadService downloadHandle)
+    private static async Task<string> DownloadMainSubscription(
+        Config config,
+        SubItem item,
+        bool blProxy,
+        DownloadService downloadHandle,
+        AgentVRequestHeaders agentVHeaders)
     {
         // Prepare subscription URL and download directly
         var url = Utils.GetPunycode(item.Url.TrimEx());
@@ -130,7 +158,6 @@ public static class SubscriptionHandler
                 : config.ConstItem.SubConvertUrl;
 
             url = string.Format(subConvertUrl!, Utils.UrlEncode(url));
-
             if (!url.Contains("target="))
             {
                 url += $"&target={item.ConvertTarget}";
@@ -143,10 +170,15 @@ public static class SubscriptionHandler
         }
 
         // Download and return result directly
-        return await DownloadSubscriptionContent(downloadHandle, url, blProxy, item.UserAgent);
+        return await DownloadSubscriptionContent(downloadHandle, url, blProxy, item.UserAgent, agentVHeaders);
     }
 
-    private static async Task<string> DownloadAdditionalSubscriptions(SubItem item, string mainResult, bool blProxy, DownloadService downloadHandle)
+    private static async Task<string> DownloadAdditionalSubscriptions(
+        SubItem item,
+        string mainResult,
+        bool blProxy,
+        DownloadService downloadHandle,
+        AgentVRequestHeaders agentVHeaders)
     {
         var result = mainResult;
 
@@ -166,7 +198,12 @@ public static class SubscriptionHandler
                 continue;
             }
 
-            var additionalResult = await DownloadSubscriptionContent(downloadHandle, url2, blProxy, item.UserAgent);
+            var additionalResult = await DownloadSubscriptionContent(
+                downloadHandle,
+                url2,
+                blProxy,
+                item.UserAgent,
+                agentVHeaders);
 
             if (additionalResult.IsNotEmpty())
             {
