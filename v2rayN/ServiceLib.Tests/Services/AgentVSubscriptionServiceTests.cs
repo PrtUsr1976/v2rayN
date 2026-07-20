@@ -39,21 +39,34 @@ public class AgentVSubscriptionServiceTests
     }
 
     [Fact]
-    public void BuildLogMessage_ContainsNormalizedHeaders()
+    public void BuildRequestHeadersLog_ContainsUserAgentAndCustomHeaders()
     {
-        var headers = new AgentVRequestHeaders(
+        var headers = new Dictionary<string, string>
+        {
+            ["x-hwid"] = "test-hwid",
+            ["x-device-os"] = "Windows"
+        };
+
+        var message = AgentVSubscriptionService.BuildRequestHeadersLog(
             "Throne/1.1.6",
-            new Dictionary<string, string>
-            {
-                ["x-hwid"] = "test-hwid",
-                ["x-device-os"] = "Windows"
-            });
+            headers,
+            false);
 
-        var message = AgentVSubscriptionService.BuildLogMessage(headers);
-
-        Assert.Contains("SUBSCRIPTION REQUEST HEADERS (agent_v)", message);
+        Assert.Contains("SUBSCRIPTION REQUEST HEADERS", message);
         Assert.Contains("User-Agent=Throne/1.1.6", message);
         Assert.Contains("x-hwid=test-hwid", message);
         Assert.Contains("x-device-os=Windows", message);
+    }
+
+    [Fact]
+    public void BuildRequestHeadersLog_LogsUserAgentWithoutAgentVHeaders()
+    {
+        var message = AgentVSubscriptionService.BuildRequestHeadersLog(
+            "v2rayN/7.24.1",
+            null,
+            true);
+
+        Assert.Contains("User-Agent=v2rayN/7.24.1", message);
+        Assert.Contains("Authorization=Basic ***", message);
     }
 }
