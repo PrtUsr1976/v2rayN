@@ -16,6 +16,7 @@ public class CoreManager
     private ProcessService? _processPreService;
     private bool _linuxSudo = false;
     private Func<bool, string, Task>? _updateFunc;
+    private long _loadCoreSequence;
     private const string _tag = "CoreHandler";
 
     public async Task Init(Config config, Func<bool, string, Task> updateFunc)
@@ -64,8 +65,12 @@ public class CoreManager
     /// <param name="preContext">Optional pre-socks context passed to <see cref="CoreStartPreService"/>.</param>
     public async Task LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext)
     {
+        var loadId = Interlocked.Increment(ref _loadCoreSequence);
+        await LogLifecycle(false, $"Core load #{loadId}: request received; TUN={_config.TunModeItem.EnableTun}.");
+
         if (mainContext == null)
         {
+            await LogLifecycle(true, $"Core load #{loadId}: cancelled because the main core context is missing.");
             await UpdateFunc(false, ResUI.CheckServerSettings);
             return;
         }
@@ -75,25 +80,62 @@ public class CoreManager
         var result = await CoreConfigHandler.GenerateClientConfig(mainContext, fileName);
         if (result.Success != true)
         {
+            await LogLifecycle(true, $"Core load #{loadId}: configuration generation failed: {result.Msg}");
             await UpdateFunc(true, result.Msg);
             return;
         }
 
+        await LogLifecycle(false,
+            $"Core load #{loadId}: configuration generated; mainCore={mainContext.RunCoreType}, " +
+            $"preCore={(preContext == null ? "none" : preContext.RunCoreType.ToString())}, TUN={_config.TunModeItem.EnableTun}.");
+
         await UpdateFunc(false, $"{node.GetSummary()}");
         await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
         await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
+
+        await LogLifecycle(false, $"Core load #{loadId}: stopping the previous core process.");
         await CoreStop();
+        await LogLifecycle(false, $"Core load #{loadId}: previous core stop completed.");
         await Task.Delay(100);
 
         if (Utils.IsWindows() && _config.TunModeItem.EnableTun)
         {
             await Task.Delay(100);
-            await WindowsUtils.RemoveTunDevice();
+            await LogLifecycle(false, $"Core load #{loadId}: checking whether an old TUN device is still visible.");
+
+            var tunReleased = await WindowsUtils.WaitForTunDevicesReleased(30000);
+            if (!tunReleased)
+            {
+                await LogLifecycle(true,
+                    $"Core load #{loadId}: cancelled. An old TUN device remained visible for 30 seconds; " +
+                    "the new Xray process was not started.");
+                return;
+            }
+
+            await LogLifecycle(false, $"Core load #{loadId}: TUN device check completed; startup may continue.");
         }
 
+        await LogLifecycle(false, $"Core load #{loadId}: starting the main core process.");
         await CoreStart(mainContext);
+
+        if (_processService == null)
+        {
+            await LogLifecycle(true, $"Core load #{loadId}: the main core process failed to start.");
+            return;
+        }
+
+        await LogLifecycle(false,
+            $"Core load #{loadId}: main core process started; PID={_processService.Id}, " +
+            $"core={mainContext.RunCoreType}, TUN={_config.TunModeItem.EnableTun}.");
+
         await WaitForProxyPort(preContext);
         await CoreStartPreService(preContext);
+
+        if (_processPreService != null)
+        {
+            await LogLifecycle(false,
+                $"Core load #{loadId}: pre-core process started; PID={_processPreService.Id}, core={preContext?.RunCoreType}.");
+        }
 
         AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
 
@@ -101,6 +143,8 @@ public class CoreManager
         {
             await UpdateFunc(true, $"{node.GetSummary()}");
         }
+
+        await LogLifecycle(false, $"Core load #{loadId}: completed.");
     }
 
     public async Task<ProcessService?> LoadCoreConfigSpeedtest(List<ServerTestItem> selecteds)
@@ -214,6 +258,12 @@ public class CoreManager
     private async Task UpdateFunc(bool notify, string msg)
     {
         await _updateFunc?.Invoke(notify, msg);
+    }
+
+    private async Task LogLifecycle(bool notify, string message)
+    {
+        Logging.SaveLog(message);
+        await UpdateFunc(notify, message + Environment.NewLine);
     }
 
     private static async Task WaitForProxyPort(CoreConfigContext? preContext, int timeoutMs = 5000)
