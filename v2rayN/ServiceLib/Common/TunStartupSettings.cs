@@ -10,7 +10,12 @@ internal sealed record TunStartupSettings(int ObservationSeconds)
 
     public static TunStartupSettings LoadOrCreate()
     {
-        var filePath = Path.Combine(AppContext.BaseDirectory, FileName);
+        return LoadOrCreate(AppContext.BaseDirectory);
+    }
+
+    internal static TunStartupSettings LoadOrCreate(string baseDirectory)
+    {
+        var filePath = Path.Combine(baseDirectory, FileName);
 
         try
         {
@@ -43,28 +48,30 @@ internal sealed record TunStartupSettings(int ObservationSeconds)
                 }
 
                 var value = line[(separator + 1)..].Trim();
-                if (int.TryParse(value, out var seconds))
+                if (int.TryParse(value, out var seconds)
+                    && seconds >= MinObservationSeconds
+                    && seconds <= MaxObservationSeconds)
                 {
-                    if (seconds < MinObservationSeconds)
-                    {
-                        lines[lineIndex] = $"{ObservationKey}={MinObservationSeconds}";
-                        File.WriteAllLines(filePath, lines, new UTF8Encoding(false));
-                        Logging.SaveLog(
-                            $"TUN startup settings: {ObservationKey}={seconds} is below the minimum; " +
-                            $"changed it to {MinObservationSeconds} in {filePath}.");
-                        return new TunStartupSettings(MinObservationSeconds);
-                    }
-
-                    if (seconds <= MaxObservationSeconds)
-                    {
-                        Logging.SaveLog($"TUN startup settings: {ObservationKey}={seconds} from {filePath}.");
-                        return new TunStartupSettings(seconds);
-                    }
+                    Logging.SaveLog($"TUN startup settings: {ObservationKey}={seconds} from {filePath}.");
+                    return new TunStartupSettings(seconds);
                 }
 
-                Logging.SaveLog(
-                    $"TUN startup settings: invalid {ObservationKey}='{value}' in {filePath}; " +
-                    $"using {DefaultObservationSeconds} seconds.");
+                lines[lineIndex] = $"{ObservationKey}={DefaultObservationSeconds}";
+                File.WriteAllLines(filePath, lines, new UTF8Encoding(false));
+
+                if (int.TryParse(value, out seconds) && seconds < MinObservationSeconds)
+                {
+                    Logging.SaveLog(
+                        $"TUN startup settings: {ObservationKey}={seconds} is below the minimum; " +
+                        $"changed it to {DefaultObservationSeconds} in {filePath}.");
+                }
+                else
+                {
+                    Logging.SaveLog(
+                        $"TUN startup settings: invalid {ObservationKey}='{value}'; " +
+                        $"changed it to {DefaultObservationSeconds} in {filePath}.");
+                }
+
                 return new TunStartupSettings(DefaultObservationSeconds);
             }
 
