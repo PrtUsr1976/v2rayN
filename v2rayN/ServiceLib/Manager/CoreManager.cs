@@ -17,16 +17,33 @@ public class CoreManager
     private bool _linuxSudo = false;
     private Func<bool, string, Task>? _updateFunc;
     private long _loadCoreSequence;
+    private int _tunStartObservationMs = 20000;
     private const string _tag = "CoreHandler";
 
     private const int TunStartMaxAttempts = 3;
-    private const int TunStartObservationMs = 20000;
     private const int TunStartRetryDelayMs = 5000;
+
+    private enum TunStartResult
+    {
+        Success,
+        Failed,
+        Cancelled
+    }
+
+    private enum TunObservationResult
+    {
+        Survived,
+        Exited,
+        Cancelled
+    }
 
     public async Task Init(Config config, Func<bool, string, Task> updateFunc)
     {
         _config = config;
         _updateFunc = updateFunc;
+
+        var tunSettings = TunStartupSettings.LoadOrCreate();
+        _tunStartObservationMs = checked(tunSettings.ObservationSeconds * 1000);
 
         //Copy the bin folder to the storage location (for init)
         if (Environment.GetEnvironmentVariable(Global.LocalAppData) == "1")
@@ -104,11 +121,26 @@ public class CoreManager
 
         var retryTunStart = Utils.IsWindows()
                             && _config.TunModeItem.EnableTun
-                            && mainContext.RunCoreType == ECoreType.Xray;
+                            && mainContext.RunCoreType is ECoreType.Xray or ECoreType.sing_box;
 
-        var started = retryTunStart
-            ? await StartXrayTunWithRetry(mainContext, loadId)
-            : await StartMainCoreOnce(mainContext, loadId, _config.TunModeItem.EnableTun);
+        bool started;
+        if (retryTunStart)
+        {
+            var tunStartResult = await StartTunWithRetry(mainContext, loadId);
+            if (tunStartResult == TunStartResult.Cancelled)
+            {
+                await LogLifecycle(false,
+                    $"Core load #{loadId}: TUN startup observation was cancelled because TUN was disabled; " +
+                    "the queued non-TUN reload may continue immediately.");
+                return;
+            }
+
+            started = tunStartResult == TunStartResult.Success;
+        }
+        else
+        {
+            started = await StartMainCoreOnce(mainContext, loadId, _config.TunModeItem.EnableTun);
+        }
 
         if (!started && retryTunStart)
         {
@@ -230,39 +262,62 @@ public class CoreManager
         return true;
     }
 
-    private async Task<bool> StartXrayTunWithRetry(CoreConfigContext context, long loadId)
+    private async Task<TunStartResult> StartTunWithRetry(CoreConfigContext context, long loadId)
     {
+        var coreName = context.RunCoreType.ToString();
+        var observationSeconds = _tunStartObservationMs / 1000;
+
         for (var attempt = 1; attempt <= TunStartMaxAttempts; attempt++)
         {
+            if (!_config.TunModeItem.EnableTun)
+            {
+                return TunStartResult.Cancelled;
+            }
+
             await LogLifecycle(false,
-                $"Core load #{loadId}: Xray TUN start attempt {attempt}/{TunStartMaxAttempts}.");
+                $"Core load #{loadId}: {coreName} TUN start attempt {attempt}/{TunStartMaxAttempts}.");
 
             await CoreStart(context);
             var process = _processService;
 
             if (process == null)
             {
+                if (!_config.TunModeItem.EnableTun)
+                {
+                    return TunStartResult.Cancelled;
+                }
+
                 await LogLifecycle(true,
-                    $"Core load #{loadId}: Xray TUN attempt {attempt} did not create a process.");
+                    $"Core load #{loadId}: {coreName} TUN attempt {attempt} did not create a process.");
             }
             else
             {
                 var pid = process.Id;
                 await LogLifecycle(false,
-                    $"Core load #{loadId}: Xray TUN attempt {attempt} started PID={pid}; " +
-                    $"observing it for {TunStartObservationMs / 1000} seconds.");
+                    $"Core load #{loadId}: {coreName} TUN attempt {attempt} started PID={pid}; " +
+                    $"observing it for {observationSeconds} seconds.");
 
-                var survived = await ProcessSurvivedObservation(process, TunStartObservationMs);
-                if (survived)
+                var observationResult = await ObserveTunStart(process, _tunStartObservationMs);
+                if (observationResult == TunObservationResult.Survived)
                 {
                     await LogLifecycle(false,
-                        $"Core load #{loadId}: Xray TUN attempt {attempt} succeeded; " +
-                        $"PID={pid} remained running for {TunStartObservationMs / 1000} seconds.");
-                    return true;
+                        $"Core load #{loadId}: {coreName} TUN attempt {attempt} succeeded; " +
+                        $"PID={pid} remained running for {observationSeconds} seconds.");
+                    return TunStartResult.Success;
+                }
+
+                if (observationResult == TunObservationResult.Cancelled)
+                {
+                    await LogLifecycle(false,
+                        $"Core load #{loadId}: {coreName} TUN observation cancelled because TUN was disabled; " +
+                        $"stopping PID={pid} immediately.");
+                    await CoreStop();
+                    return TunStartResult.Cancelled;
                 }
 
                 await LogLifecycle(true,
-                    $"Core load #{loadId}: Xray TUN attempt {attempt} failed; PID={pid} exited during startup observation.");
+                    $"Core load #{loadId}: {coreName} TUN attempt {attempt} failed; " +
+                    $"PID={pid} exited during startup observation.");
 
                 process.Dispose();
                 if (ReferenceEquals(_processService, process))
@@ -274,14 +329,21 @@ public class CoreManager
             if (attempt < TunStartMaxAttempts)
             {
                 await LogLifecycle(false,
-                    $"Core load #{loadId}: waiting {TunStartRetryDelayMs / 1000} seconds before Xray TUN retry {attempt + 1}.");
-                await Task.Delay(TunStartRetryDelayMs);
+                    $"Core load #{loadId}: waiting {TunStartRetryDelayMs / 1000} seconds before " +
+                    $"{coreName} TUN retry {attempt + 1}.");
+
+                if (!await DelayWhileTunEnabled(TunStartRetryDelayMs))
+                {
+                    await LogLifecycle(false,
+                        $"Core load #{loadId}: {coreName} TUN retry cancelled because TUN was disabled.");
+                    return TunStartResult.Cancelled;
+                }
             }
         }
 
         await LogLifecycle(true,
-            $"Core load #{loadId}: all {TunStartMaxAttempts} Xray TUN start attempts failed.");
-        return false;
+            $"Core load #{loadId}: all {TunStartMaxAttempts} {coreName} TUN start attempts failed.");
+        return TunStartResult.Failed;
     }
 
     private async Task<bool> StartWithoutTunFallback(
@@ -313,21 +375,48 @@ public class CoreManager
         return await StartMainCoreOnce(mainContext, loadId, false);
     }
 
-    private static async Task<bool> ProcessSurvivedObservation(ProcessService process, int observationMs)
+    private async Task<TunObservationResult> ObserveTunStart(ProcessService process, int observationMs)
     {
         var stopwatch = Stopwatch.StartNew();
 
         while (stopwatch.ElapsedMilliseconds < observationMs)
         {
+            if (!_config.TunModeItem.EnableTun)
+            {
+                return TunObservationResult.Cancelled;
+            }
+
             if (process.HasExited)
+            {
+                return TunObservationResult.Exited;
+            }
+
+            await Task.Delay(100);
+        }
+
+        if (!_config.TunModeItem.EnableTun)
+        {
+            return TunObservationResult.Cancelled;
+        }
+
+        return process.HasExited ? TunObservationResult.Exited : TunObservationResult.Survived;
+    }
+
+    private async Task<bool> DelayWhileTunEnabled(int delayMs)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        while (stopwatch.ElapsedMilliseconds < delayMs)
+        {
+            if (!_config.TunModeItem.EnableTun)
             {
                 return false;
             }
 
-            await Task.Delay(250);
+            await Task.Delay(100);
         }
 
-        return !process.HasExited;
+        return _config.TunModeItem.EnableTun;
     }
 
     private async Task CoreStart(CoreConfigContext context)
