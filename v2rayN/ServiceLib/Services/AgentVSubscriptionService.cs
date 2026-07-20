@@ -20,6 +20,7 @@ public static class AgentVSubscriptionService
         var path = ResolvePath(configuredPath);
         if (!File.Exists(path))
         {
+            Logging.SaveLog(BuildLogMessage(AgentVRequestHeaders.Empty));
             return AgentVRequestHeaders.Empty;
         }
 
@@ -60,7 +61,9 @@ public static class AgentVSubscriptionService
                 }
             }
 
-            return new AgentVRequestHeaders(userAgent, headers);
+            var result = new AgentVRequestHeaders(userAgent, headers);
+            Logging.SaveLog(BuildLogMessage(result));
+            return result;
         }
         catch (Exception ex)
         {
