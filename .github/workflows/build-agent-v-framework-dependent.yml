@@ -1,0 +1,54 @@
+name: build agent_v framework-dependent
+
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Purge SDKs
+        shell: pwsh
+        run: |
+          dotnet --list-sdks | % {
+            $_ -match '^\S+\s+\[(.+)\]$' > $null
+            $d = Join-Path $Matches[1] $_.Split()[0]
+            Remove-Item $d -Recurse -Force
+          }
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: '10.0.1xx'
+
+      - name: Publish v2rayN
+        working-directory: ./v2rayN
+        run: dotnet publish ./v2rayN/v2rayN.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:EnableWindowsTargeting=true -o "${{ github.workspace }}/publish"
+
+      - name: Publish AmazTool
+        working-directory: ./v2rayN
+        run: dotnet publish ./AmazTool/AmazTool.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false -p:EnableWindowsTargeting=true -o "${{ github.workspace }}/publish"
+
+      - name: Remove debug symbols
+        shell: pwsh
+        run: Get-ChildItem "${{ github.workspace }}/publish" -Filter *.pdb | Remove-Item -Force
+
+      - name: Show output sizes
+        shell: pwsh
+        run: Get-ChildItem "${{ github.workspace }}/publish" | Sort-Object Name | Format-Table Name, Length
+
+      - name: Upload framework-dependent build
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: v2rayN-agent-v-win-x64-framework-dependent
+          path: publish/
