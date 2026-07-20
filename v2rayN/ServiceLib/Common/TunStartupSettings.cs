@@ -3,6 +3,7 @@ namespace ServiceLib.Common;
 internal sealed record TunStartupSettings(int ObservationSeconds)
 {
     private const int DefaultObservationSeconds = 20;
+    private const int MinObservationSeconds = 20;
     private const int MaxObservationSeconds = 300;
     private const string FileName = "finetunes.ini";
     private const string ObservationKey = "TunStartObservationSeconds";
@@ -20,9 +21,10 @@ internal sealed record TunStartupSettings(int ObservationSeconds)
                 return new TunStartupSettings(DefaultObservationSeconds);
             }
 
-            foreach (var sourceLine in File.ReadLines(filePath))
+            var lines = File.ReadAllLines(filePath);
+            for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
             {
-                var line = sourceLine.Trim();
+                var line = lines[lineIndex].Trim();
                 if (line.Length == 0 || line.StartsWith(';') || line.StartsWith('#') || line.StartsWith('['))
                 {
                     continue;
@@ -41,12 +43,23 @@ internal sealed record TunStartupSettings(int ObservationSeconds)
                 }
 
                 var value = line[(separator + 1)..].Trim();
-                if (int.TryParse(value, out var seconds)
-                    && seconds >= 1
-                    && seconds <= MaxObservationSeconds)
+                if (int.TryParse(value, out var seconds))
                 {
-                    Logging.SaveLog($"TUN startup settings: {ObservationKey}={seconds} from {filePath}.");
-                    return new TunStartupSettings(seconds);
+                    if (seconds < MinObservationSeconds)
+                    {
+                        lines[lineIndex] = $"{ObservationKey}={MinObservationSeconds}";
+                        File.WriteAllLines(filePath, lines, new UTF8Encoding(false));
+                        Logging.SaveLog(
+                            $"TUN startup settings: {ObservationKey}={seconds} is below the minimum; " +
+                            $"changed it to {MinObservationSeconds} in {filePath}.");
+                        return new TunStartupSettings(MinObservationSeconds);
+                    }
+
+                    if (seconds <= MaxObservationSeconds)
+                    {
+                        Logging.SaveLog($"TUN startup settings: {ObservationKey}={seconds} from {filePath}.");
+                        return new TunStartupSettings(seconds);
+                    }
                 }
 
                 Logging.SaveLog(
