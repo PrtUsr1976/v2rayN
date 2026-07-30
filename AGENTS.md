@@ -8,6 +8,20 @@
 - Work from the latest `master` unless the user explicitly requests another branch.
 - Do not treat `backup-before-workflow-experiments-20260720` as the working branch.
 
+## Initial Codex orientation
+
+When this repository is first opened in Codex, begin with a read-only orientation pass.
+
+1. Read this `AGENTS.md` completely.
+2. Read `README.md` and `docs/TUN_STARTUP_FIX.md`.
+3. Inspect the current `master` branch and recent Git history.
+4. Locate and understand the existing custom code for subscription headers, `agent_v`, delayed TUN startup, TUN retry/fallback handling, and Windows build variants.
+5. Inspect the relevant project structure, tests, and manual GitHub Actions workflows.
+6. Do not edit files, create a branch, commit, push, or start a long build during this orientation pass unless the user explicitly requests it.
+7. After inspection, give a concise summary of the current project state, note any uncertainties, and state that the repository is ready for the next task.
+
+Do not invent a next task or make preventive changes. Wait for the user's concrete instruction.
+
 ## Project purpose
 
 This repository contains a customized Windows build of v2rayN. The main custom features are:
@@ -84,55 +98,6 @@ Accepted values are 20 through 300 seconds. Missing or invalid values are normal
 Do not claim that every possible Windows, Wintun, Xray, sing-box, driver, network, or security-software TUN problem has been fixed. Use wording such as "improves startup reliability" or "addresses specific startup failures".
 
 Relevant implementation areas include `StartupArgumentHelper`, `TunStartupSettings`, the Windows application startup code, `CoreManager`, and `ProcessService`.
-
-## Update-check behavior already investigated
-
-There are two different automatic update mechanisms.
-
-### Geo-file automatic updates
-
-The setting shown in the v2rayN options window as:
-
-```text
-Интервал автоматического обновления Geo в часах
-```
-
-maps to:
-
-```text
-GuiItem.AutoUpdateInterval
-```
-
-A value of `0` disables automatic Geo-file updates only. It does not disable daily checks for v2rayN or proxy-core versions.
-
-### Daily program and core update checks
-
-`TaskManager.ScheduledTasks()` calls the daily update check from `UpdateTaskRunCheckUpdate()` approximately once every 24 hours.
-
-The update service checks only the component types stored in:
-
-```text
-CheckUpdateItem.SelectedCoreTypes
-```
-
-The update window saves selected component types. An empty selected list prevents version checks for v2rayN and proxy cores.
-
-The option:
-
-```text
-Проверить наличие предварительных обновлений
-```
-
-only enables prerelease checks. It is not a master switch for update checking.
-
-Before modifying update behavior, inspect at least:
-
-- `v2rayN/ServiceLib/Manager/TaskManager.cs`
-- `v2rayN/ServiceLib/ViewModels/CheckUpdateViewModel.cs`
-- `v2rayN/ServiceLib/Services/UpdateService.cs`
-- `v2rayN/ServiceLib/ViewModels/OptionSettingViewModel.cs`
-- the Windows option and update-window XAML files
-- `ResUI.ru.resx`
 
 ## Build variants
 
