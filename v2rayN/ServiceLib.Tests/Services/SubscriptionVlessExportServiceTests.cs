@@ -42,6 +42,19 @@ public class SubscriptionVlessExportServiceTests
         Assert.Equal(result.OrderBy(link => link, StringComparer.OrdinalIgnoreCase), result);
     }
 
+    [Fact]
+    public void ExtractOriginalVlessLinksPreservesExactParameters()
+    {
+        const string first = "vless://id@b.example:443?spx=&type=tcp#B";
+        const string second = "vless://id@a.example:443?type=tcp#A";
+        var content = $"{first}\n{second}\nss://ignored";
+
+        var result = SubscriptionVlessExportService.ExtractOriginalVlessLinks(content);
+
+        Assert.Equal([second, first], result);
+        Assert.Contains("spx=", result[1]);
+    }
+
     [Theory]
     [InlineData("xtls", "xtls")]
     [InlineData("  xtls-2  ", "xtls-2")]

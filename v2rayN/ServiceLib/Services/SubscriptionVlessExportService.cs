@@ -4,12 +4,16 @@ public static class SubscriptionVlessExportService
 {
     private const string DirectoryName = "subs_links";
 
-    public static async Task ExportAsync(SubItem subscription)
+    public static async Task ExportAsync(SubItem subscription, string? originalContent = null)
     {
         try
         {
-            var profiles = await AppManager.Instance.ProfileItems(subscription.Id) ?? [];
-            var links = BuildSortedLinks(profiles);
+            var links = ExtractOriginalVlessLinks(originalContent);
+            if (links.Count == 0)
+            {
+                var profiles = await AppManager.Instance.ProfileItems(subscription.Id) ?? [];
+                links = BuildSortedLinks(profiles);
+            }
             var directory = Path.Combine(AppContext.BaseDirectory, DirectoryName);
             Directory.CreateDirectory(directory);
 
@@ -29,6 +33,21 @@ public static class SubscriptionVlessExportService
         {
             Logging.SaveLog("SubscriptionVlessExportService", ex);
         }
+    }
+
+    public static IReadOnlyList<string> ExtractOriginalVlessLinks(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return [];
+        }
+
+        return Regex.Matches(content, @"vless://[^\s""'<>]+", RegexOptions.IgnoreCase)
+            .Select(match => match.Value)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(link => link, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(link => link, StringComparer.Ordinal)
+            .ToList();
     }
 
     public static IReadOnlyList<string> BuildSortedLinks(IEnumerable<ProfileItem> profiles)

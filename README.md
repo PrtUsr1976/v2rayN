@@ -99,7 +99,7 @@ After every successful subscription update, the application creates or refreshes
 subs_links/<subscription-name>.txt
 ```
 
-The file contains only VLESS share links from that subscription, sorted alphabetically. Existing files are replaced. The `subs_links` directory and local subscription input/download files are runtime data and are not intended to be committed to Git.
+The file contains the original VLESS links extracted directly from the downloaded subscription response, sorted alphabetically. The links are not rebuilt from v2rayN profiles, so query-string details such as an explicitly empty `spx=` value are preserved. Existing files are replaced. If the downloaded response contains no extractable VLESS links, the application falls back to rebuilding links from the imported v2rayN profiles. The `subs_links` directory and local subscription input/download files are runtime data and are not intended to be committed to Git.
 
 ### XKeen configuration export
 
@@ -112,9 +112,10 @@ The application reads `xkeen_sets.ini` strictly from the directory containing `v
 content = xtls(vk, de, es, nl, ch, fr, hk)
 content = un1c4d3(sw3)
 content = arza(se1)
+content = arza(no1), spx=""
 ```
 
-Each section creates `set_N`. Each server name in parentheses creates the next numbered directory in declaration order. A reference such as `xtls(de)` selects subscription `xtls` and a profile whose server address starts with `de.`. Matching is case-insensitive. If a subscription or server is not found, its numbered directory remains empty and the problem is included in the final report.
+Each section creates `set_N`. Each server name in parentheses creates the next numbered directory in declaration order. A reference such as `xtls(de)` selects subscription `xtls` and a profile whose server address starts with `de.`. Matching is case-insensitive. The optional suffix `, spx="value"` applies an explicit `spiderX` override to every server listed on that `content` line; `spx=""` deliberately writes an empty value. If a subscription or server is not found, its numbered directory remains empty and the problem is included in the final report.
 
 The export recreates the `xkeen_sets` directory next to the application:
 
@@ -129,7 +130,7 @@ xkeen_sets/
 └── set_2.zip
 ```
 
-Every `04_outbounds.json` is generated from the current v2rayN profile through the Xray configuration generator. Each ZIP contains the numbered directories, including empty ones, and the set's `readme.txt`. When all entries are exported without errors, the application reports `Экспорт конфигов успешно завершен!`; otherwise it displays a combined error report after processing the available entries.
+Every `04_outbounds.json` is generated from the current v2rayN profile through the Xray configuration generator. For `spiderX`, the exporter uses this priority: an explicit `spx` override in `xkeen_sets.ini`; the exact VLESS link saved in `subs_links`; then the v2rayN profile when no saved source link can be matched. In a matched source link, `spx=%2F` becomes `/`, an explicit `spx=` remains empty, and a missing `spx` parameter defaults to `/`. Each ZIP contains the numbered directories, including empty ones, and the set's `readme.txt`. When all entries are exported without errors, the application reports `Экспорт конфигов успешно завершен!`; otherwise it displays a combined error report after processing the available entries.
 
 ### Custom version
 
@@ -208,7 +209,7 @@ v2rayN.exe -tundelay <секунды>
 subs_links/<имя-подписки>.txt
 ```
 
-Файл содержит только VLESS-ссылки этой подписки, отсортированные по алфавиту. Старое содержимое перезаписывается.
+Файл содержит исходные VLESS-ссылки, извлечённые непосредственно из загруженного ответа сервера подписки, и сортирует их по алфавиту. Ссылки не пересобираются из профилей v2rayN, поэтому сохраняются детали строки параметров, в том числе явно пустое значение `spx=`. Старое содержимое перезаписывается. Если в ответе не удалось извлечь VLESS-ссылки, используется резервный вариант — формирование ссылок из импортированных профилей v2rayN.
 
 ### Экспорт для XKeen
 
@@ -221,11 +222,12 @@ subs_links/<имя-подписки>.txt
 content = xtls(vk, de, es, nl, ch, fr, hk)
 content = un1c4d3(sw3)
 content = arza(se1)
+content = arza(no1), spx=""
 ```
 
-Каждая секция создаёт набор `set_N`. Для каждого имени сервера в скобках последовательно создаётся отдельная нумерованная папка. Запись `xtls(de)` означает: найти подписку `xtls`, затем найти в ней профиль, адрес сервера которого начинается с `de.`. Регистр не учитывается.
+Каждая секция создаёт набор `set_N`. Для каждого имени сервера в скобках последовательно создаётся отдельная нумерованная папка. Запись `xtls(de)` означает: найти подписку `xtls`, затем найти в ней профиль, адрес сервера которого начинается с `de.`. Регистр не учитывается. Необязательное окончание `, spx="значение"` явно переопределяет `spiderX` для всех серверов в этой строке `content`; запись `spx=""` намеренно задаёт пустое значение.
 
-Перед экспортом старая папка `xkeen_sets` полностью очищается. В найденных позициях создаётся `04_outbounds.json` на основе актуального профиля и штатного генератора Xray. Если подписка или сервер не найдены, соответствующая папка остаётся пустой, а ошибка добавляется в итоговый отчёт.
+Перед экспортом старая папка `xkeen_sets` полностью очищается. В найденных позициях создаётся `04_outbounds.json` на основе актуального профиля и штатного генератора Xray. Для `spiderX` действует приоритет: явное значение `spx` из `xkeen_sets.ini`; точная исходная VLESS-ссылка из `subs_links`; профиль v2rayN, если сохранённая ссылка не найдена. В найденной исходной ссылке `spx=%2F` преобразуется в `/`, явно указанный `spx=` остаётся пустым, а при отсутствии параметра `spx` используется значение по умолчанию `/`. Если подписка или сервер не найдены, соответствующая папка остаётся пустой, а ошибка добавляется в итоговый отчёт.
 
 В корне каждого `set_N` создаётся `readme.txt`. Рядом создаётся архив `set_N.zip`, содержащий `readme.txt` и все нумерованные папки, включая пустые.
 

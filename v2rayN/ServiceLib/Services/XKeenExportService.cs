@@ -2,7 +2,7 @@ using System.IO.Compression;
 
 namespace ServiceLib.Services;
 
-public sealed record XKeenServerReference(string SubscriptionName, string ServerPrefix);
+public sealed record XKeenServerReference(string SubscriptionName, string ServerPrefix, string? SpiderXOverride = null);
 
 public sealed record XKeenSetDefinition(string Name, IReadOnlyList<XKeenServerReference> Servers);
 
@@ -114,10 +114,19 @@ public class XKeenExportService
 
                 try
                 {
-                    var json = await BuildOutboundsJsonAsync(AppManager.Instance.Config, profile);
+                    var originalLink = FindOriginalVlessLink(
+                        applicationDirectory,
+                        reference.SubscriptionName,
+                        profile);
+                    var spiderXOverride = reference.SpiderXOverride
+                                          ?? GetSpiderXFromOriginalLink(originalLink);
+                    var json = await BuildOutboundsJsonAsync(
+                        AppManager.Instance.Config,
+                        profile,
+                        spiderXOverride);
                     await File.WriteAllTextAsync(Path.Combine(itemDirectory, "04_outbounds.json"), json);
                     readmeNames.Add($"{position} - {profile.Remarks}");
-                    var link = FmtHandler.GetShareUri(profile);
+                    var link = originalLink ?? FmtHandler.GetShareUri(profile);
                     if (link.IsNotEmpty())
                     {
                         readmeLinks.Add(link);
@@ -189,7 +198,9 @@ public class XKeenExportService
                 continue;
             }
 
-            var contentMatch = Regex.Match(line, @"^content\s*=\s*([^(]+?)\s*\(([^)]*)\)\s*$",
+            var contentMatch = Regex.Match(
+                line,
+                @"^content\s*=\s*([^(]+?)\s*\(([^)]*)\)\s*(?:,\s*spx\s*=\s*""([^""]*)"")?\s*$",
                 RegexOptions.IgnoreCase);
             if (!contentMatch.Success)
             {
@@ -206,7 +217,11 @@ public class XKeenExportService
                 continue;
             }
 
-            currentServers.AddRange(serverNames.Select(name => new XKeenServerReference(subscriptionName, name)));
+            var spiderXOverride = contentMatch.Groups[3].Success
+                ? contentMatch.Groups[3].Value
+                : null;
+            currentServers.AddRange(serverNames.Select(name =>
+                new XKeenServerReference(subscriptionName, name, spiderXOverride)));
         }
 
         if (currentName is not null && currentServers is not null)
@@ -224,6 +239,123 @@ public class XKeenExportService
             profile.Address.StartsWith(addressPrefix, StringComparison.OrdinalIgnoreCase));
     }
 
+    public static string? FindOriginalVlessLink(
+        string applicationDirectory,
+        string subscriptionName,
+        ProfileItem profile)
+    {
+        var fileName = SubscriptionVlessExportService.GetSafeFileName(subscriptionName) + ".txt";
+        var filePath = Path.Combine(applicationDirectory, "subs_links", fileName);
+        if (!File.Exists(filePath))
+        {
+            return null;
+        }
+
+        foreach (var line in File.ReadLines(filePath))
+        {
+            var link = line.Trim();
+            if (!Uri.TryCreate(link, UriKind.Absolute, out var uri)
+                || !uri.Scheme.Equals("vless", StringComparison.OrdinalIgnoreCase)
+                || !uri.Host.Equals(profile.Address, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (profile.Port > 0 && uri.Port != profile.Port)
+            {
+                continue;
+            }
+
+            return link;
+        }
+
+        return null;
+    }
+
+    public static string? GetSpiderXFromOriginalLink(string? link)
+    {
+        if (link is null || !Uri.TryCreate(link, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        foreach (var parameter in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = parameter.Split('=', 2);
+            if (!parts[0].Equals("spx", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return parts.Length == 1 ? string.Empty : Uri.UnescapeDataString(parts[1]);
+        }
+
+        return "/";
+    }
+
+    public static JsonObject NormalizeOutboundsForXKeen(JsonNode sourceProxy, string? spiderXOverride = null)
+    {
+        var proxy = sourceProxy.DeepClone();
+        proxy["tag"] = "vless-reality";
+        proxy.AsObject().Remove("mux");
+
+        var vnext = proxy["settings"]?["vnext"] as JsonArray;
+        var users = vnext?.FirstOrDefault()?["users"] as JsonArray;
+        if (users is not null)
+        {
+            foreach (var user in users.OfType<JsonObject>())
+            {
+                user.Remove("email");
+                user.Remove("security");
+                user["level"] = 0;
+            }
+        }
+
+        if (proxy["streamSettings"] is JsonObject streamSettings)
+        {
+            if (streamSettings["network"]?.GetValue<string>() == nameof(ETransport.raw))
+            {
+                streamSettings["network"] = Global.RawNetworkAlias;
+            }
+
+            if (streamSettings["realitySettings"] is JsonObject realitySettings)
+            {
+                realitySettings.Remove("show");
+                if (spiderXOverride is not null)
+                {
+                    realitySettings["spiderX"] = spiderXOverride;
+                }
+
+                if (realitySettings["mldsa65Verify"]?.GetValue<string>().IsNullOrEmpty() != false)
+                {
+                    realitySettings.Remove("mldsa65Verify");
+                }
+            }
+        }
+
+        var direct = new JsonObject
+        {
+            ["tag"] = "direct",
+            ["protocol"] = "freedom"
+        };
+        var block = new JsonObject
+        {
+            ["tag"] = "block",
+            ["protocol"] = "blackhole",
+            ["settings"] = new JsonObject
+            {
+                ["response"] = new JsonObject
+                {
+                    ["type"] = "http"
+                }
+            }
+        };
+
+        return new JsonObject
+        {
+            ["outbounds"] = new JsonArray(proxy, direct, block)
+        };
+    }
     public static void CreateSetArchive(string setDirectory, string archivePath, int folderCount)
     {
         if (File.Exists(archivePath))
@@ -260,7 +392,10 @@ public class XKeenExportService
         }
     }
 
-    private static async Task<string> BuildOutboundsJsonAsync(Config config, ProfileItem profile)
+    private static async Task<string> BuildOutboundsJsonAsync(
+        Config config,
+        ProfileItem profile,
+        string? spiderXOverride)
     {
         var builderResult = await CoreConfigContextBuilder.Build(config, profile);
         var result = new CoreConfigV2rayService(builderResult.Context).GenerateClientConfigContent();
@@ -280,20 +415,7 @@ public class XKeenExportService
             throw new InvalidOperationException("Прокси-outbound не сформирован.");
         }
 
-        var proxyCopy = proxy.DeepClone();
-        proxyCopy["tag"] = "vless-reality";
-        var output = new JsonArray(proxyCopy);
-        foreach (var protocol in new[] { "freedom", "blackhole" })
-        {
-            var outbound = sourceOutbounds.FirstOrDefault(node =>
-                node?["protocol"]?.GetValue<string>() == protocol);
-            if (outbound is not null)
-            {
-                output.Add(outbound.DeepClone());
-            }
-        }
-
-        return JsonUtils.Serialize(new JsonObject { ["outbounds"] = output });
+        return JsonUtils.Serialize(NormalizeOutboundsForXKeen(proxy, spiderXOverride));
     }
 
     private static string NormalizeSetDirectoryName(string sectionName)
