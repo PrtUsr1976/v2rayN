@@ -41,6 +41,7 @@ public static class SubscriptionHandler
                 // Process download result
                 if (await ProcessDownloadResult(config, item.Id, result, hashCode, updateFunc))
                 {
+                    await SubscriptionVlessExportService.ExportAsync(item);
                     successCount++;
                 }
 

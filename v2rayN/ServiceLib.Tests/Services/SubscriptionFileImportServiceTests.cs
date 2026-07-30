@@ -14,13 +14,13 @@ public class SubscriptionFileImportServiceTests
             "https://sub.example.com:52478/sub/token"
         };
 
-        var result = SubscriptionFileImportService.Parse(lines, ["ent.xtls.win", "ent.xtls.win-1"]);
+        var result = SubscriptionFileImportService.Parse(lines, ["xtls"]);
 
         Assert.Collection(
             result,
-            item => Assert.Equal("ent.xtls.win-2", item.Remarks),
-            item => Assert.Equal("ent.xtls.win-3", item.Remarks),
-            item => Assert.Equal("sub.example.com", item.Remarks));
+            item => Assert.Equal("xtls-2", item.Remarks),
+            item => Assert.Equal("xtls-3", item.Remarks),
+            item => Assert.Equal("example", item.Remarks));
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class SubscriptionFileImportServiceTests
         var result = SubscriptionFileImportService.Parse(lines, []);
 
         var item = Assert.Single(result);
-        Assert.Equal("example.com", item.Remarks);
+        Assert.Equal("example", item.Remarks);
         Assert.Equal("https://Example.COM/sub/value", item.Url);
     }
 
@@ -49,8 +49,8 @@ public class SubscriptionFileImportServiceTests
     {
         var result = SubscriptionFileImportService.Parse(
             ["https://example.com/sub/value"],
-            ["EXAMPLE.COM"]);
+            ["EXAMPLE"]);
 
-        Assert.Equal("example.com-1", Assert.Single(result).Remarks);
+        Assert.Equal("example-2", Assert.Single(result).Remarks);
     }
 }

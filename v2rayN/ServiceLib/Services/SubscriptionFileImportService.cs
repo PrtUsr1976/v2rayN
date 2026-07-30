@@ -28,9 +28,10 @@ public static class SubscriptionFileImportService
                 continue;
             }
 
-            var baseRemarks = uri.IdnHost.ToLowerInvariant();
+            var hostParts = uri.IdnHost.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            var baseRemarks = (hostParts.Length >= 2 ? hostParts[^2] : hostParts[0]).ToLowerInvariant();
             var remarks = baseRemarks;
-            for (var suffix = 1; usedRemarks.Contains(remarks); suffix++)
+            for (var suffix = 2; usedRemarks.Contains(remarks); suffix++)
             {
                 remarks = $"{baseRemarks}-{suffix}";
             }
