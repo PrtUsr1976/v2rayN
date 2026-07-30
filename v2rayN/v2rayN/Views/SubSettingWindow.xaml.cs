@@ -19,6 +19,7 @@ public partial class SubSettingWindow
             this.Bind(ViewModel, vm => vm.SelectedSource, v => v.lstSubscription.SelectedItem).DisposeWith(disposables);
 
             this.BindCommand(ViewModel, vm => vm.SubAddCmd, v => v.menuSubAdd).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.SubImportFromFileCmd, v => v.menuSubImportFromFile).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.SubDeleteCmd, v => v.menuSubDelete).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.SubEditCmd, v => v.menuSubEdit).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.SubShareCmd, v => v.menuSubShare).DisposeWith(disposables);
@@ -45,6 +46,15 @@ public partial class SubSettingWindow
                 }
                 await ShareSub(url);
                 interaction.SetOutput(Unit.Default);
+            }).DisposeWith(disposables);
+            ViewModel.BrowseSubscriptionFileInteraction.RegisterHandler(interaction =>
+            {
+                if (UI.OpenFileDialog(out var fileName, "Text files|*.txt|All files|*.*") != true)
+                {
+                    interaction.SetOutput(null);
+                    return;
+                }
+                interaction.SetOutput(fileName);
             }).DisposeWith(disposables);
         });
         WindowsUtils.SetDarkBorder(this, AppManager.Instance.Config.UiItem.CurrentTheme);

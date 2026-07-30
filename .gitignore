@@ -402,3 +402,8 @@ FodyWeavers.xsd
 # JetBrains Rider
 .idea/
 *.sln.iml
+
+# Local subscription inputs and downloaded configurations; may contain private data.
+subs_links.txt
+subscription_configs/
+downloaded_subscriptions/

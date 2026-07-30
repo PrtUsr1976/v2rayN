@@ -40,6 +40,13 @@
                         </StackPanel>
                     </Button>
                     <Separator />
+                    <Button x:Name="menuSubImportFromFile">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Margin="{StaticResource MarginRight8}" VerticalAlignment="Center" Kind="FileImport" />
+                            <TextBlock Style="{StaticResource ToolbarTextBlock}" Text="Import subscriptions from file" />
+                        </StackPanel>
+                    </Button>
+                    <Separator />
                     <Button x:Name="menuSubDelete">
                         <StackPanel Orientation="Horizontal">
                             <materialDesign:PackIcon
