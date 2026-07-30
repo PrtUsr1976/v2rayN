@@ -276,14 +276,14 @@
                             <MenuItem
                                 x:Name="menuPromotion"
                                 Padding="{StaticResource MarginLeftRight8}"
-                                AutomationProperties.Name="{x:Static resx:ResUI.menuPromotion}">
+                                AutomationProperties.Name="XKeen">
                                 <MenuItem.Header>
                                     <StackPanel Orientation="Horizontal">
                                         <materialDesign:PackIcon
                                             Margin="{StaticResource MarginRight8}"
                                             VerticalAlignment="Center"
                                             Kind="VolumeHigh" />
-                                        <TextBlock Text="{x:Static resx:ResUI.menuPromotion}" />
+                                        <TextBlock Text="XKeen" />
                                     </StackPanel>
                                 </MenuItem.Header>
                             </MenuItem>

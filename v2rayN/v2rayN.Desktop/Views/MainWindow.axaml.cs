@@ -1,6 +1,7 @@
 using System.Reactive.Disposables;
 using Avalonia.Controls.Notifications;
 using DialogHostAvalonia;
+using ServiceLib.Services;
 using v2rayN.Desktop.Base;
 using v2rayN.Desktop.Common;
 using v2rayN.Desktop.Manager;
@@ -25,7 +26,7 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
 
         KeyDown += MainWindow_KeyDown;
         menuSettingsSetUWP.Click += MenuSettingsSetUWP_Click;
-        menuPromotion.Click += MenuPromotion_Click;
+        menuPromotion.Click += MenuXKeen_Click;
         menuCheckUpdate.Click += MenuCheckUpdate_Click;
         btnNewUpdate.Click += MenuCheckUpdate_Click;
         menuBackupAndRestore.Click += MenuBackupAndRestore_Click;
@@ -237,9 +238,10 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         }
     }
 
-    private void MenuPromotion_Click(object? sender, RoutedEventArgs e)
+    private async void MenuXKeen_Click(object? sender, RoutedEventArgs e)
     {
-        ProcUtils.ProcessStart($"{Utils.Base64Decode(Global.PromotionUrl)}?t={DateTime.Now.Ticks}");
+        var result = await new XKeenExportService().ExportAsync(Utils.StartupPath());
+        await UI.Show(result.GetMessage());
     }
 
     private void MenuSettingsSetUWP_Click(object? sender, RoutedEventArgs e)

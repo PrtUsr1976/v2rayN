@@ -31,7 +31,8 @@ try {
     } else {
         $Json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($OperationsBase64))
     }
-    $Operations = @($Json | ConvertFrom-Json)
+    $ParsedOperations = $Json | ConvertFrom-Json
+    $Operations = if ($ParsedOperations -is [Array]) { $ParsedOperations } else { @($ParsedOperations) }
 }
 catch {
     throw "Edit operations must contain valid UTF-8 JSON: $($_.Exception.Message)"
@@ -40,7 +41,7 @@ if ($Operations.Count -eq 0) {
     throw 'At least one edit operation is required.'
 }
 
-$Prepared = @()
+$Prepared = [ordered]@{}
 foreach ($Operation in $Operations) {
     $RelativePath = [string]$Operation.path
     $FullPath = Resolve-RepositoryPath $RelativePath
@@ -59,20 +60,24 @@ foreach ($Operation in $Operations) {
         throw "Expected count must be positive: $RelativePath"
     }
 
-    $Text = [IO.File]::ReadAllText($FullPath)
+    $Text = if ($Prepared.Contains($FullPath)) {
+        $Prepared[$FullPath].UpdatedText
+    } else {
+        [IO.File]::ReadAllText($FullPath)
+    }
     $ActualCount = ([regex]::Matches($Text, [regex]::Escape($Find))).Count
     if ($ActualCount -ne $ExpectedCount) {
         throw "Expected $ExpectedCount matches in $RelativePath, found $ActualCount."
     }
 
-    $Prepared += [pscustomobject]@{
+    $Prepared[$FullPath] = [pscustomobject]@{
         RelativePath = $RelativePath
         FullPath = $FullPath
         UpdatedText = $Text.Replace($Find, $Replace)
     }
 }
 
-foreach ($Edit in $Prepared) {
+foreach ($Edit in $Prepared.Values) {
     if ($CheckOnly) {
         Write-Host "Check OK: $($Edit.RelativePath)"
         continue

@@ -8,6 +8,12 @@ internal class UI
 {
     private static readonly string caption = Global.AppName;
 
+    public static async Task Show(string msg)
+    {
+        var owner = WindowDialog.TryGetOwnerWindow();
+        var box = new MessageBoxDialog(caption, msg);
+        await box.ShowDialog<ButtonResult>(owner);
+    }
     public static async Task<ButtonResult> ShowYesNo(string msg)
     {
         var owner = WindowDialog.TryGetOwnerWindow();
