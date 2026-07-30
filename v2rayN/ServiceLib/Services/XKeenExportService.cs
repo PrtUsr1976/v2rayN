@@ -1,3 +1,5 @@
+using System.IO.Compression;
+
 namespace ServiceLib.Services;
 
 public sealed record XKeenServerReference(string SubscriptionName, string ServerPrefix);
@@ -135,6 +137,11 @@ public class XKeenExportService
                          + string.Join(Environment.NewLine, readmeLinks)
                          + Environment.NewLine;
                 await File.WriteAllTextAsync(Path.Combine(setDirectory, "readme.txt"), readme);
+                var setName = NormalizeSetDirectoryName(set.Name);
+                CreateSetArchive(
+                    setDirectory,
+                    Path.Combine(outputDirectory, $"{setName}.zip"),
+                    set.Servers.Count);
             }
         }
         catch (Exception ex)
@@ -215,6 +222,42 @@ public class XKeenExportService
         var addressPrefix = serverPrefix.Trim() + ".";
         return profiles.FirstOrDefault(profile =>
             profile.Address.StartsWith(addressPrefix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static void CreateSetArchive(string setDirectory, string archivePath, int folderCount)
+    {
+        if (File.Exists(archivePath))
+        {
+            File.Delete(archivePath);
+        }
+
+        using var archive = ZipFile.Open(archivePath, ZipArchiveMode.Create);
+        for (var position = 1; position <= folderCount; position++)
+        {
+            var itemDirectory = Path.Combine(setDirectory, position.ToString());
+            var archiveDirectory = $"{position}/";
+            archive.CreateEntry(archiveDirectory);
+
+            if (!Directory.Exists(itemDirectory))
+            {
+                continue;
+            }
+
+            foreach (var filePath in Directory.GetFiles(itemDirectory, "*", SearchOption.AllDirectories))
+            {
+                var relativePath = Path.GetRelativePath(itemDirectory, filePath).Replace('\\', '/');
+                archive.CreateEntryFromFile(
+                    filePath,
+                    archiveDirectory + relativePath,
+                    CompressionLevel.Optimal);
+            }
+        }
+
+        var readmePath = Path.Combine(setDirectory, "readme.txt");
+        if (File.Exists(readmePath))
+        {
+            archive.CreateEntryFromFile(readmePath, "readme.txt", CompressionLevel.Optimal);
+        }
     }
 
     private static async Task<string> BuildOutboundsJsonAsync(Config config, ProfileItem profile)

@@ -282,7 +282,7 @@
                                         <materialDesign:PackIcon
                                             Margin="{StaticResource MarginRight8}"
                                             VerticalAlignment="Center"
-                                            Kind="VolumeHigh" />
+                                            Kind="RouterWireless" />
                                         <TextBlock Text="XKeen" />
                                     </StackPanel>
                                 </MenuItem.Header>

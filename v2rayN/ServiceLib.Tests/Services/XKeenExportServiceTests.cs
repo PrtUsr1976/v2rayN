@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using Xunit;
 
 namespace ServiceLib.Tests.Services;
@@ -61,5 +62,36 @@ public class XKeenExportServiceTests
 
         Assert.True(result.Success);
         Assert.Equal("Экспорт конфигов успешно завершен!", result.GetMessage());
+    }
+
+    [Fact]
+    public void CreateSetArchive_IncludesNumberedFoldersAndReadme()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "xkeen-test-" + Guid.NewGuid());
+        var setDirectory = Path.Combine(root, "set_1");
+        var archivePath = Path.Combine(root, "set_1.zip");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(setDirectory, "1"));
+            Directory.CreateDirectory(Path.Combine(setDirectory, "2"));
+            File.WriteAllText(Path.Combine(setDirectory, "1", "04_outbounds.json"), "{}");
+            File.WriteAllText(Path.Combine(setDirectory, "readme.txt"), "included");
+
+            XKeenExportService.CreateSetArchive(setDirectory, archivePath, 2);
+
+            using var archive = ZipFile.OpenRead(archivePath);
+            var names = archive.Entries.Select(entry => entry.FullName).ToList();
+            Assert.Contains("1/", names);
+            Assert.Contains("1/04_outbounds.json", names);
+            Assert.Contains("2/", names);
+            Assert.Contains("readme.txt", names);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, true);
+            }
+        }
     }
 }

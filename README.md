@@ -16,7 +16,21 @@
 
 ## Custom Windows build
 
-This repository contains a customized v2rayN build focused on more reliable TUN startup, custom subscription HTTP headers, improved diagnostics, and lightweight Windows packages.
+This repository contains a customized v2rayN build focused on subscription automation, XKeen export, more reliable TUN startup, custom subscription HTTP headers, improved diagnostics, and selectable Windows packages.
+
+### Differences from upstream
+
+Compared with the upstream `2dust/v2rayN` project, this repository adds:
+
+- subscription URL import from a plain-text file;
+- deterministic subscription names derived from domains;
+- automatic VLESS link export after subscription updates;
+- XKeen configuration-set export, including ZIP archives;
+- subscription HTTP headers loaded from `agent_v` and diagnostic header logging;
+- delayed, observed, and retried Windows TUN startup with fallback to a normal connection;
+- the `7.24.1.alex` product/informational version shown in the window title and file properties;
+- manual Windows x64 Light, Medium, and Full build workflows;
+- repository maintenance, build, and comparison scripts in `ps_scripts`.
 
 ### TUN startup reliability
 
@@ -73,6 +87,54 @@ By default, `agent_v` is read from the application directory. A different path c
 
 The parser accepts UTF-8, blank lines, comments beginning with `;` or `#`, whitespace around keys and values, and duplicate keys where the last value wins.
 
+### Subscription import and VLESS export
+
+The subscription settings window can import subscription URLs from a plain-text file. Put one URL on each line. Blank lines and comments are skipped.
+
+Subscription names are derived from the main domain label. For example, `ent.xtls.win` produces `xtls`. If that name already exists, the next names are `xtls-2`, `xtls-3`, and so on; the suffix `-1` is not used.
+
+After every successful subscription update, the application creates or refreshes:
+
+```text
+subs_links/<subscription-name>.txt
+```
+
+The file contains only VLESS share links from that subscription, sorted alphabetically. Existing files are replaced. The `subs_links` directory and local subscription input/download files are runtime data and are not intended to be committed to Git.
+
+### XKeen configuration export
+
+The former **Promotion** command is replaced by **XKeen** in both supported user interfaces. In the Windows toolbar it uses a router icon.
+
+The application reads `xkeen_sets.ini` strictly from the directory containing `v2rayN.exe`. The tracked [xkeen_sets.ini](xkeen_sets.ini) file is an example:
+
+```ini
+[set.1]
+content = xtls(vk, de, es, nl, ch, fr, hk)
+content = un1c4d3(sw3)
+content = arza(se1)
+```
+
+Each section creates `set_N`. Each server name in parentheses creates the next numbered directory in declaration order. A reference such as `xtls(de)` selects subscription `xtls` and a profile whose server address starts with `de.`. Matching is case-insensitive. If a subscription or server is not found, its numbered directory remains empty and the problem is included in the final report.
+
+The export recreates the `xkeen_sets` directory next to the application:
+
+```text
+xkeen_sets/
+├── set_1/
+│   ├── 1/04_outbounds.json
+│   ├── 2/04_outbounds.json
+│   └── readme.txt
+├── set_1.zip
+├── set_2/
+└── set_2.zip
+```
+
+Every `04_outbounds.json` is generated from the current v2rayN profile through the Xray configuration generator. Each ZIP contains the numbered directories, including empty ones, and the set's `readme.txt`. When all entries are exported without errors, the application reports `Экспорт конфигов успешно завершен!`; otherwise it displays a combined error report after processing the available entries.
+
+### Custom version
+
+The application uses `7.24.1.alex` as its informational/product version. This value is visible in the main window title and in Windows file properties. The numeric file and assembly version remains `7.24.1.0` for compatibility.
+
 ### Windows packages
 
 A lightweight Windows x64 package is available in [GitHub Releases](https://github.com/PrtUsr1976/v2rayN/releases). It does not bundle .NET or proxy cores, so the required .NET Desktop Runtime and cores must be installed or added separately.
@@ -97,6 +159,19 @@ All three custom workflows target Windows x64 and include `agent_v` next to `v2r
 
 ## Русский
 
+### Отличия от оригинального v2rayN
+
+По сравнению с исходным проектом [2dust/v2rayN](https://github.com/2dust/v2rayN) в этой сборке добавлены:
+
+- импорт адресов подписок из текстового файла;
+- формирование имён подписок из доменов;
+- автоматический экспорт VLESS-ссылок после обновления подписок;
+- экспорт наборов конфигураций для XKeen вместе с ZIP-архивами;
+- пользовательские HTTP-заголовки подписок из `agent_v` и их диагностическое журналирование;
+- отложенный и контролируемый запуск TUN с повторными попытками и резервным обычным подключением;
+- версия `7.24.1.alex` в заголовке программы и свойствах файлов;
+- ручные варианты сборки Windows x64 Light, Medium и Full;
+- PowerShell-скрипты обслуживания, сборки и сравнения в `ps_scripts`.
 ### Исправление запуска TUN
 
 Эта модификация предназначена для случаев, когда режим TUN в v2rayN не запускается после входа в Windows, не работает при первом запуске или начинает работать только после повторного запуска программы.
@@ -118,6 +193,53 @@ v2rayN.exe -tundelay <секунды>
 ### Пользовательские заголовки подписки
 
 Добавлена загрузка пользовательских HTTP-заголовков запросов подписки из файла `agent_v` и их диагностическое логирование. Поддерживаются `User-Agent`, `x-hwid`, `x-device-os`, `x-ver-os` и `x-device-model`.
+
+Файл `agent_v` по умолчанию читается рядом с `v2rayN.exe`. Альтернативный путь можно задать переменной окружения `V2RAYN_AGENT_V_PATH`. Поддерживаются UTF-8, пустые строки, комментарии `;` и `#`, пробелы вокруг ключей и повторяющиеся ключи; используется последнее значение.
+
+### Импорт и экспорт подписок
+
+В окне настройки подписок можно импортировать текстовый файл, содержащий по одному URL в строке. Пустые строки и комментарии пропускаются.
+
+Имя подписки создаётся из основной части домена. Например, для `ent.xtls.win` используется имя `xtls`. При совпадении имён создаются `xtls-2`, `xtls-3` и далее; имя `xtls-1` не используется.
+
+После каждого успешного обновления подписки рядом с программой создаётся или обновляется:
+
+```text
+subs_links/<имя-подписки>.txt
+```
+
+Файл содержит только VLESS-ссылки этой подписки, отсортированные по алфавиту. Старое содержимое перезаписывается.
+
+### Экспорт для XKeen
+
+Команда «Продвижение» заменена кнопкой **XKeen**. Функция доступна в WPF и Avalonia; в панели Windows используется значок роутера.
+
+Программа ищет `xkeen_sets.ini` строго рядом с `v2rayN.exe`. Корневой файл [xkeen_sets.ini](xkeen_sets.ini) служит примером формата:
+
+```ini
+[set.1]
+content = xtls(vk, de, es, nl, ch, fr, hk)
+content = un1c4d3(sw3)
+content = arza(se1)
+```
+
+Каждая секция создаёт набор `set_N`. Для каждого имени сервера в скобках последовательно создаётся отдельная нумерованная папка. Запись `xtls(de)` означает: найти подписку `xtls`, затем найти в ней профиль, адрес сервера которого начинается с `de.`. Регистр не учитывается.
+
+Перед экспортом старая папка `xkeen_sets` полностью очищается. В найденных позициях создаётся `04_outbounds.json` на основе актуального профиля и штатного генератора Xray. Если подписка или сервер не найдены, соответствующая папка остаётся пустой, а ошибка добавляется в итоговый отчёт.
+
+В корне каждого `set_N` создаётся `readme.txt`. Рядом создаётся архив `set_N.zip`, содержащий `readme.txt` и все нумерованные папки, включая пустые.
+
+Если ошибок нет, программа выводит:
+
+```text
+Экспорт конфигов успешно завершен!
+```
+
+При ошибках обработка остальных записей продолжается, после чего показывается общий отчёт.
+
+### Версия сборки
+
+Информационная и продуктовая версия изменена на `7.24.1.alex`. Она отображается в заголовке главного окна и свойствах EXE/DLL. Числовая версия файлов и сборок сохранена как `7.24.1.0` для совместимости.
 
 ### Сборки Windows
 
