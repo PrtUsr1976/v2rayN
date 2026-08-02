@@ -42,24 +42,38 @@ public static class SubscriptionVlessExportService
             return [];
         }
 
-        return Regex.Matches(content, @"vless://[^\s""'<>]+", RegexOptions.IgnoreCase)
+        return SortLinks(Regex.Matches(content, @"vless://[^\s""'<>]+", RegexOptions.IgnoreCase)
             .Select(match => match.Value)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(link => link, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(link => link, StringComparer.Ordinal)
-            .ToList();
+            .Distinct(StringComparer.Ordinal));
     }
 
     public static IReadOnlyList<string> BuildSortedLinks(IEnumerable<ProfileItem> profiles)
     {
-        return profiles
+        return SortLinks(profiles
             .Where(profile => profile.ConfigType == EConfigType.VLESS)
             .Select(FmtHandler.GetShareUri)
             .Where(link => !string.IsNullOrWhiteSpace(link))
-            .Select(link => link!)
-            .OrderBy(link => link, StringComparer.OrdinalIgnoreCase)
+            .Select(link => link!));
+    }
+
+    public static IReadOnlyList<string> SortLinks(IEnumerable<string> links)
+    {
+        return links
+            .OrderBy(GetLinkSortKey, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(link => link, StringComparer.OrdinalIgnoreCase)
             .ThenBy(link => link, StringComparer.Ordinal)
             .ToList();
+    }
+
+    public static string GetLinkSortKey(string link)
+    {
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var uri))
+        {
+            return link;
+        }
+
+        var name = Uri.UnescapeDataString(uri.Fragment.TrimStart('#')).Trim();
+        return name.Length > 0 ? name : uri.Host;
     }
 
     public static string GetSafeFileName(string? remarks)

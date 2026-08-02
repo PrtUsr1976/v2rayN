@@ -99,7 +99,7 @@ After every successful subscription update, the application creates or refreshes
 subs_links/<subscription-name>.txt
 ```
 
-The file contains the original VLESS links extracted directly from the downloaded subscription response, sorted alphabetically. The links are not rebuilt from v2rayN profiles, so query-string details such as an explicitly empty `spx=` value are preserved. Existing files are replaced. If the downloaded response contains no extractable VLESS links, the application falls back to rebuilding links from the imported v2rayN profiles. The `subs_links` directory and local subscription input/download files are runtime data and are not intended to be committed to Git.
+The file contains the original VLESS links extracted directly from the downloaded subscription response, sorted in ascending ordinal order by the complete decoded display name after `#`, including leading flags and symbols, matching the Android version's ordering. The links are not rebuilt from v2rayN profiles, so query-string details such as an explicitly empty `spx=` value are preserved. Existing files are replaced. If the downloaded response contains no extractable VLESS links, the application falls back to rebuilding links from the imported v2rayN profiles. The `subs_links` directory and local subscription input/download files are runtime data and are not intended to be committed to Git.
 
 ### XKeen configuration export
 
@@ -209,7 +209,7 @@ v2rayN.exe -tundelay <секунды>
 subs_links/<имя-подписки>.txt
 ```
 
-Файл содержит исходные VLESS-ссылки, извлечённые непосредственно из загруженного ответа сервера подписки, и сортирует их по алфавиту. Ссылки не пересобираются из профилей v2rayN, поэтому сохраняются детали строки параметров, в том числе явно пустое значение `spx=`. Старое содержимое перезаписывается. Если в ответе не удалось извлечь VLESS-ссылки, используется резервный вариант — формирование ссылок из импортированных профилей v2rayN.
+Файл содержит исходные VLESS-ссылки, извлечённые непосредственно из загруженного ответа сервера подписки, и сортирует их по возрастанию по полному декодированному названию после `#`, включая начальные флаги и значки, как в Android-версии. Ссылки не пересобираются из профилей v2rayN, поэтому сохраняются детали строки параметров, в том числе явно пустое значение `spx=`. Старое содержимое перезаписывается. Если в ответе не удалось извлечь VLESS-ссылки, используется резервный вариант — формирование ссылок из импортированных профилей v2rayN.
 
 ### Экспорт для XKeen
 
