@@ -405,5 +405,7 @@ FodyWeavers.xsd
 
 # Local subscription inputs and downloaded configurations; may contain private data.
 subs_links.txt
+/hwid
+/ps_scripts/edit_operations.json
 subscription_configs/
 downloaded_subscriptions/

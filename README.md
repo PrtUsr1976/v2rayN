@@ -26,7 +26,7 @@ Compared with the upstream `2dust/v2rayN` project, this repository adds:
 - deterministic subscription names derived from domains;
 - automatic VLESS link export after subscription updates;
 - XKeen configuration-set export, including ZIP archives;
-- subscription HTTP headers loaded from `agent_v` and diagnostic header logging;
+- subscription HTTP headers loaded from `hwid` or `agent_v` and diagnostic request logging;
 - delayed, observed, and retried Windows TUN startup with fallback to a normal connection;
 - the `7.24.1.alex` product/informational version shown in the window title and file properties;
 - manual Windows x64 Light, Medium, and Full build workflows;
@@ -63,7 +63,7 @@ See [TUN startup fix and diagnostics](docs/TUN_STARTUP_FIX.md) for details.
 
 ### Custom subscription HTTP headers
 
-Subscription requests can use custom HTTP headers loaded from the `agent_v` file. The application logs the effective subscription request headers for diagnostics.
+Subscription requests can use custom HTTP headers loaded from `hwid` or `agent_v` next to the application. The application checks `hwid` first and falls back to `agent_v`. It logs the safe server address and effective request headers for diagnostics; credentials and URL query parameters are not logged.
 
 Example `agent_v`:
 
@@ -83,9 +83,9 @@ x_device_model=VirtualBox
 | `x_ver_os` | `x-ver-os` |
 | `x_device_model` | `x-device-model` |
 
-By default, `agent_v` is read from the application directory. A different path can be supplied through the `V2RAYN_AGENT_V_PATH` environment variable.
+By default, the application looks for `hwid` in its directory and reads `agent_v` only when `hwid` is absent. A different file or directory can be supplied through the legacy `V2RAYN_AGENT_V_PATH` environment variable; when it names a directory, the same `hwid`-first priority is used.
 
-The parser accepts UTF-8, blank lines, comments beginning with `;` or `#`, whitespace around keys and values, and duplicate keys where the last value wins.
+Both files accept either `key=value` or the preferred `key value` format. One or more spaces or TAB characters may separate a key and value. The parser accepts UTF-8, blank lines, comments beginning with `;` or `#`, underscore or hyphen header names, and duplicate keys where the last value wins. The request starts with the normal v2rayN `User-Agent`; values from the selected file then replace existing headers case-insensitively or add new headers.
 
 ### Subscription import and VLESS export
 
@@ -168,7 +168,7 @@ All three custom workflows target Windows x64 and include `agent_v` next to `v2r
 - формирование имён подписок из доменов;
 - автоматический экспорт VLESS-ссылок после обновления подписок;
 - экспорт наборов конфигураций для XKeen вместе с ZIP-архивами;
-- пользовательские HTTP-заголовки подписок из `agent_v` и их диагностическое журналирование;
+- пользовательские HTTP-заголовки подписок из `hwid` или `agent_v` и диагностическое журналирование запросов;
 - отложенный и контролируемый запуск TUN с повторными попытками и резервным обычным подключением;
 - версия `7.24.1.alex` в заголовке программы и свойствах файлов;
 - ручные варианты сборки Windows x64 Light, Medium и Full;
@@ -193,9 +193,9 @@ v2rayN.exe -tundelay <секунды>
 
 ### Пользовательские заголовки подписки
 
-Добавлена загрузка пользовательских HTTP-заголовков запросов подписки из файла `agent_v` и их диагностическое логирование. Поддерживаются `User-Agent`, `x-hwid`, `x-device-os`, `x-ver-os` и `x-device-model`.
+Добавлена загрузка произвольных пользовательских HTTP-заголовков запросов подписки из файлов `hwid` и `agent_v`. Программа сначала ищет `hwid` рядом с `v2rayN.exe`, а при его отсутствии использует `agent_v`. В журнал записываются безопасный адрес сервера и итоговые заголовки; данные авторизации и параметры URL не раскрываются.
 
-Файл `agent_v` по умолчанию читается рядом с `v2rayN.exe`. Альтернативный путь можно задать переменной окружения `V2RAYN_AGENT_V_PATH`. Поддерживаются UTF-8, пустые строки, комментарии `;` и `#`, пробелы вокруг ключей и повторяющиеся ключи; используется последнее значение.
+Оба файла поддерживают форматы `ключ=значение` и предпочтительный `ключ значение`. Разделителем могут быть один или несколько пробелов либо символов TAB. Поддерживаются UTF-8, пустые строки, комментарии `;` и `#`, имена с подчёркиваниями или дефисами и повторяющиеся ключи; используется последнее значение. Сначала формируется штатный `User-Agent` v2rayN, затем значения выбранного файла без учёта регистра заменяют существующие заголовки или добавляют новые. Переменная окружения `V2RAYN_AGENT_V_PATH` по-прежнему может задавать отдельный файл или папку; для папки сохраняется приоритет `hwid` → `agent_v`.
 
 ### Импорт и экспорт подписок
 

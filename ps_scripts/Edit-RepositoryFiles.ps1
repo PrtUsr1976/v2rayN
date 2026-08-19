@@ -83,6 +83,12 @@ foreach ($Edit in $Prepared.Values) {
         continue
     }
 
-    [IO.File]::WriteAllText($Edit.FullPath, $Edit.UpdatedText, $Utf8NoBom)
+    $OriginalBytes = [IO.File]::ReadAllBytes($Edit.FullPath)
+    $HasUtf8Bom = $OriginalBytes.Length -ge 3 `
+        -and $OriginalBytes[0] -eq 0xEF `
+        -and $OriginalBytes[1] -eq 0xBB `
+        -and $OriginalBytes[2] -eq 0xBF
+    $Encoding = if ($HasUtf8Bom) { [Text.UTF8Encoding]::new($true) } else { $Utf8NoBom }
+    [IO.File]::WriteAllText($Edit.FullPath, $Edit.UpdatedText, $Encoding)
     Write-Host "Updated: $($Edit.RelativePath)"
 }

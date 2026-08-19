@@ -57,4 +57,15 @@ foreach ($RelativePath in $Files) {
     Write-Host "Copied $RelativePath"
 }
 
+$OptionalFiles = @('hwid')
+foreach ($RelativePath in $OptionalFiles) {
+    $Source = Join-Path $RepoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $Source)) {
+        continue
+    }
+
+    Copy-Item -LiteralPath $Source -Destination (Join-Path $ExpectedOutput $RelativePath) -Force
+    Write-Host "Copied local $RelativePath"
+}
+
 Write-Host "Replacement package is ready: $ExpectedOutput"

@@ -11,6 +11,7 @@ public sealed record AgentVRequestHeaders(string? UserAgent, IReadOnlyDictionary
 public static class AgentVSubscriptionService
 {
     public const string DefaultFileName = "agent_v";
+    public const string PreferredFileName = "hwid";
     public const string PathEnvironmentVariable = "V2RAYN_AGENT_V_PATH";
 
     private const string LogTag = "AgentVSubscriptionService";
@@ -36,14 +37,14 @@ public static class AgentVSubscriptionService
                     continue;
                 }
 
-                var separatorIndex = line.IndexOf('=');
-                if (separatorIndex <= 0)
+                var match = Regex.Match(line, @"^([^=\s]+)\s*(?:=|\s+)\s*(.+?)\s*$");
+                if (!match.Success)
                 {
                     continue;
                 }
 
-                var key = line[..separatorIndex].Trim();
-                var value = line[(separatorIndex + 1)..].Trim();
+                var key = match.Groups[1].Value;
+                var value = match.Groups[2].Value;
                 if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
                 {
                     continue;
@@ -70,13 +71,16 @@ public static class AgentVSubscriptionService
     }
 
     public static string BuildRequestHeadersLog(
+        string url,
         string userAgent,
         IReadOnlyDictionary<string, string>? requestHeaders,
         bool hasBasicAuthorization)
     {
         var lines = new List<string>
         {
-            "SUBSCRIPTION REQUEST HEADERS",
+            "SUBSCRIPTION REQUEST",
+            $"Server={GetSafeServerAddress(url)}",
+            "HEADERS",
             $"User-Agent={userAgent}"
         };
 
@@ -86,7 +90,8 @@ public static class AgentVSubscriptionService
                          .Where(x => !x.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase))
                          .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
             {
-                lines.Add($"{header.Key}={header.Value}");
+                var value = IsSensitiveHeader(header.Key) ? "***" : header.Value;
+                lines.Add($"{header.Key}={value}");
             }
         }
 
@@ -96,6 +101,28 @@ public static class AgentVSubscriptionService
         }
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static bool IsSensitiveHeader(string name)
+    {
+        return name.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Cookie", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase)
+               || name.Contains("api-key", StringComparison.OrdinalIgnoreCase)
+               || name.Contains("token", StringComparison.OrdinalIgnoreCase)
+               || name.Contains("secret", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string GetSafeServerAddress(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return "<invalid URL>";
+        }
+
+        var serverUri = new UriBuilder(uri.Scheme, uri.Host, uri.IsDefaultPort ? -1 : uri.Port).Uri;
+        return serverUri.GetLeftPart(UriPartial.Authority);
     }
 
     private static string ResolvePath(string? configuredPath)
@@ -108,7 +135,7 @@ public static class AgentVSubscriptionService
 
         if (string.IsNullOrWhiteSpace(path))
         {
-            return Path.Combine(AppContext.BaseDirectory, DefaultFileName);
+            return ResolvePreferredFile(AppContext.BaseDirectory);
         }
 
         path = Environment.ExpandEnvironmentVariables(path);
@@ -119,10 +146,18 @@ public static class AgentVSubscriptionService
 
         if (Directory.Exists(path))
         {
-            path = Path.Combine(path, DefaultFileName);
+            return ResolvePreferredFile(path);
         }
 
         return Path.GetFullPath(path);
+    }
+
+    private static string ResolvePreferredFile(string directory)
+    {
+        var preferredPath = Path.Combine(directory, PreferredFileName);
+        return File.Exists(preferredPath)
+            ? preferredPath
+            : Path.Combine(directory, DefaultFileName);
     }
 
     private static string NormalizeHeaderName(string key)
