@@ -1696,7 +1696,7 @@ public static class ConfigHandler
             {
                 it.Subid = subid;
                 it.IsSub = isSub;
-                it.PreSocksPort = preSocksPort;
+                it.PreSocksPort = preSocksPort ?? it.PreSocksPort;
                 if (await AddCustomServer(config, it, true) == 0)
                 {
                     count++;
@@ -1729,7 +1729,7 @@ public static class ConfigHandler
 
         profileItem.Subid = subid;
         profileItem.IsSub = isSub;
-        profileItem.PreSocksPort = preSocksPort;
+        profileItem.PreSocksPort = preSocksPort ?? profileItem.PreSocksPort;
         if (await AddCustomServer(config, profileItem, true) == 0)
         {
             return 1;

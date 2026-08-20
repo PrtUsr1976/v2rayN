@@ -121,10 +121,38 @@ public class CoreManager
 
         var retryTunStart = Utils.IsWindows()
                             && _config.TunModeItem.EnableTun
-                            && mainContext.RunCoreType is ECoreType.Xray or ECoreType.sing_box;
+                            && (preContext?.RunCoreType ?? mainContext.RunCoreType) is ECoreType.Xray or ECoreType.sing_box;
+
+        var retryPreCoreTunStart = retryTunStart && preContext != null;
+        var preCoreStarted = false;
 
         bool started;
-        if (retryTunStart)
+        if (retryPreCoreTunStart)
+        {
+            started = await StartMainCoreOnce(mainContext, loadId, false);
+            if (started)
+            {
+                await WaitForProxyPort(preContext);
+                var tunStartResult = await StartPreCoreTunWithRetry(preContext!, loadId);
+                if (tunStartResult == TunStartResult.Cancelled)
+                {
+                    await LogLifecycle(false,
+                        $"Core load #{loadId}: pre-core TUN startup observation was cancelled because TUN was disabled; " +
+                        "the queued non-TUN reload may continue immediately.");
+                    await CoreStop();
+                    return;
+                }
+
+                preCoreStarted = tunStartResult == TunStartResult.Success;
+            }
+
+            if (!started || !preCoreStarted)
+            {
+                await CoreStop();
+                started = await StartWithoutTunFallback(mainContext, preContext, loadId);
+            }
+        }
+        else if (retryTunStart)
         {
             var tunStartResult = await StartTunWithRetry(mainContext, loadId);
             if (tunStartResult == TunStartResult.Cancelled)
@@ -142,7 +170,7 @@ public class CoreManager
             started = await StartMainCoreOnce(mainContext, loadId, _config.TunModeItem.EnableTun);
         }
 
-        if (!started && retryTunStart)
+        if (!started && retryTunStart && !retryPreCoreTunStart)
         {
             started = await StartWithoutTunFallback(mainContext, preContext, loadId);
         }
@@ -153,8 +181,11 @@ public class CoreManager
             return;
         }
 
-        await WaitForProxyPort(preContext);
-        await CoreStartPreService(preContext);
+        if (!preCoreStarted)
+        {
+            await WaitForProxyPort(preContext);
+            await CoreStartPreService(preContext);
+        }
 
         if (_processPreService != null)
         {
@@ -432,6 +463,88 @@ public class CoreManager
             return;
         }
         _processService = proc;
+    }
+
+    private async Task<TunStartResult> StartPreCoreTunWithRetry(CoreConfigContext preContext, long loadId)
+    {
+        var coreName = preContext.RunCoreType.ToString();
+        var observationSeconds = _tunStartObservationMs / 1000;
+
+        for (var attempt = 1; attempt <= TunStartMaxAttempts; attempt++)
+        {
+            if (!_config.TunModeItem.EnableTun)
+            {
+                return TunStartResult.Cancelled;
+            }
+
+            await LogLifecycle(false,
+                $"Core load #{loadId}: pre-core {coreName} TUN start attempt {attempt}/{TunStartMaxAttempts}.");
+
+            await CoreStartPreService(preContext);
+            var process = _processPreService;
+
+            if (process == null)
+            {
+                if (!_config.TunModeItem.EnableTun)
+                {
+                    return TunStartResult.Cancelled;
+                }
+
+                await LogLifecycle(true,
+                    $"Core load #{loadId}: pre-core {coreName} TUN attempt {attempt} did not create a process.");
+            }
+            else
+            {
+                var pid = process.Id;
+                await LogLifecycle(false,
+                    $"Core load #{loadId}: pre-core {coreName} TUN attempt {attempt} started PID={pid}; " +
+                    $"observing it for {observationSeconds} seconds.");
+
+                var observationResult = await ObserveTunStart(process, _tunStartObservationMs);
+                if (observationResult == TunObservationResult.Survived)
+                {
+                    await LogLifecycle(false,
+                        $"Core load #{loadId}: pre-core {coreName} TUN attempt {attempt} succeeded; " +
+                        $"PID={pid} remained running for {observationSeconds} seconds.");
+                    return TunStartResult.Success;
+                }
+
+                if (observationResult == TunObservationResult.Cancelled)
+                {
+                    await LogLifecycle(false,
+                        $"Core load #{loadId}: pre-core {coreName} TUN observation cancelled because TUN was disabled.");
+                    return TunStartResult.Cancelled;
+                }
+
+                await LogLifecycle(true,
+                    $"Core load #{loadId}: pre-core {coreName} TUN attempt {attempt} failed; " +
+                    $"PID={pid} exited during startup observation.");
+
+                process.Dispose();
+                if (ReferenceEquals(_processPreService, process))
+                {
+                    _processPreService = null;
+                }
+            }
+
+            if (attempt < TunStartMaxAttempts)
+            {
+                await LogLifecycle(false,
+                    $"Core load #{loadId}: waiting {TunStartRetryDelayMs / 1000} seconds before " +
+                    $"pre-core {coreName} TUN retry {attempt + 1}.");
+
+                if (!await DelayWhileTunEnabled(TunStartRetryDelayMs))
+                {
+                    await LogLifecycle(false,
+                        $"Core load #{loadId}: pre-core {coreName} TUN retry cancelled because TUN was disabled.");
+                    return TunStartResult.Cancelled;
+                }
+            }
+        }
+
+        await LogLifecycle(true,
+            $"Core load #{loadId}: all {TunStartMaxAttempts} pre-core {coreName} TUN start attempts failed.");
+        return TunStartResult.Failed;
     }
 
     private async Task CoreStartPreService(CoreConfigContext? preContext)
