@@ -129,6 +129,8 @@ Before changing behavior, inspect the current code and relevant commits instead 
 
 ## PowerShell scripts
 
+Before creating or running PowerShell scripts, read and follow [`SCRIPTS_RULES.md`](SCRIPTS_RULES.md). Its fixed-command and task-file rules are mandatory and take precedence over the shorter summary below.
+
 For command-line work on Windows, create and reuse PowerShell scripts under:
 
 ```text
