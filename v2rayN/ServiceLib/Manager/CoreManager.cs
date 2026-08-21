@@ -84,10 +84,14 @@ public class CoreManager
 
     /// <param name="mainContext">Resolved main context (with pre-socks ports already merged if applicable).</param>
     /// <param name="preContext">Optional pre-socks context passed to <see cref="CoreStartPreService"/>.</param>
-    public async Task LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext)
+    public async Task LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext, string requestSource)
     {
         var loadId = Interlocked.Increment(ref _loadCoreSequence);
-        await LogLifecycle(false, $"Core load #{loadId}: request received; TUN={_config.TunModeItem.EnableTun}.");
+        var profileId = mainContext?.Node.IndexId ?? "none";
+        var configType = mainContext?.Node.ConfigType.ToString() ?? "none";
+        await LogLifecycle(false,
+            $"Core load #{loadId}: request received; source={requestSource}; profile={profileId}; " +
+            $"configType={configType}; TUN={_config.TunModeItem.EnableTun}.");
 
         if (mainContext == null)
         {

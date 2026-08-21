@@ -229,7 +229,7 @@ public class MainWindowViewModel : MyReactiveObject
 
         ReloadCmd = ReactiveCommand.CreateFromTask(async () =>
         {
-            await Reload();
+            await Reload("manual reload command");
         });
 
         RegionalPresetDefaultCmd = ReactiveCommand.CreateFromTask(async () =>
@@ -268,19 +268,20 @@ public class MainWindowViewModel : MyReactiveObject
             .ObserveOn(RxSchedulers.MainThreadScheduler)
             .Subscribe(async _ => await RefreshServers());
 
-        var vmReloadRequestedList = new List<IObservable<Unit>>
-        {
-            ProfilesViewModel.ReloadRequested.AsObservable(),
-            StatusBarViewModel.ReloadRequested.AsObservable(),
-            CheckUpdateViewModel.ReloadRequested.AsObservable(),
-        };
+        ProfilesViewModel.ReloadRequested
+            .AsObservable()
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(async _ => await Reload("ProfilesViewModel.ReloadRequested"));
 
-        foreach (var reloadRequested in vmReloadRequestedList)
-        {
-            reloadRequested
-                .ObserveOn(RxSchedulers.MainThreadScheduler)
-                .Subscribe(async _ => await Reload());
-        }
+        StatusBarViewModel.ReloadRequested
+            .AsObservable()
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(async _ => await Reload("StatusBarViewModel.ReloadRequested"));
+
+        CheckUpdateViewModel.ReloadRequested
+            .AsObservable()
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(async _ => await Reload("CheckUpdateViewModel.ReloadRequested"));
 
         StatusBarViewModel.AddServerViaScanRequested
             .AsObservable()
@@ -336,7 +337,7 @@ public class MainWindowViewModel : MyReactiveObject
         }
         await RefreshServersDispatcherAsync();
 
-        await Reload();
+        await Reload("application startup");
     }
 
     #endregion Init
@@ -364,7 +365,7 @@ public class MainWindowViewModel : MyReactiveObject
             // If indexId changed or subIndexId is empty, directly reload.
             if (indexIdOld != _config.IndexId || _config.SubIndexId.IsNullOrEmpty())
             {
-                await Reload();
+                await Reload("scheduled update changed active server");
             }
             else
             {
@@ -372,7 +373,7 @@ public class MainWindowViewModel : MyReactiveObject
                 var profile = await AppManager.Instance.GetProfileItem(_config.IndexId);
                 if (profile != null && profile.Subid == _config.SubIndexId)
                 {
-                    await Reload();
+                    await Reload("scheduled update refreshed active subscription");
                 }
             }
 
@@ -449,7 +450,7 @@ public class MainWindowViewModel : MyReactiveObject
             await RefreshServersDispatcherAsync();
             if (item.IndexId == _config.IndexId)
             {
-                await Reload();
+                await Reload("active server edited");
             }
         }
     }
@@ -564,7 +565,7 @@ public class MainWindowViewModel : MyReactiveObject
             {
                 await StatusBarViewModel.InboundDisplayStatus();
             });
-            await Reload();
+            await Reload("option settings changed");
         }
     }
 
@@ -579,7 +580,7 @@ public class MainWindowViewModel : MyReactiveObject
             {
                 await StatusBarViewModel.RefreshRoutingsMenu();
             });
-            await Reload();
+            await Reload("routing settings changed");
         }
     }
 
@@ -589,7 +590,7 @@ public class MainWindowViewModel : MyReactiveObject
         var ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(dnsSettingViewModel);
         if (ret == true)
         {
-            await Reload();
+            await Reload("DNS settings changed");
         }
     }
 
@@ -599,7 +600,7 @@ public class MainWindowViewModel : MyReactiveObject
         var ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(fullConfigTemplateViewModel);
         if (ret == true)
         {
-            await Reload();
+            await Reload("full config template changed");
         }
     }
 
@@ -631,15 +632,41 @@ public class MainWindowViewModel : MyReactiveObject
 
     #region core job
 
-    private bool _hasNextReloadJob = false;
+    private sealed record ReloadRequest(long Id, string Source, string IndexId, bool EnableTun);
+
+    private ReloadRequest? _queuedReloadRequest;
+    private long _reloadRequestSequence;
     private readonly SemaphoreSlim _reloadSemaphore = new(1, 1);
 
-    public async Task Reload()
+    public Task Reload(string source)
     {
-        //If there are unfinished reload job, marked with next job.
+        var request = new ReloadRequest(
+            Interlocked.Increment(ref _reloadRequestSequence),
+            source,
+            _config.IndexId ?? string.Empty,
+            _config.TunModeItem.EnableTun);
+
+        return Reload(request);
+    }
+
+    private bool ReloadRequestMatchesCurrentState(ReloadRequest request)
+    {
+        return string.Equals(request.IndexId, _config.IndexId ?? string.Empty, StringComparison.Ordinal)
+               && request.EnableTun == _config.TunModeItem.EnableTun;
+    }
+
+    private async Task Reload(ReloadRequest request)
+    {
+        Logging.SaveLog(
+            $"Reload request #{request.Id}: received; source={request.Source}; " +
+            $"profile={request.IndexId}; TUN={request.EnableTun}.");
+
+        // Keep only the newest request while another reload is running.
         if (!await _reloadSemaphore.WaitAsync(0))
         {
-            _hasNextReloadJob = true;
+            var replacedRequest = Interlocked.Exchange(ref _queuedReloadRequest, request);
+            var replacedText = replacedRequest == null ? string.Empty : $"; replaced queued request #{replacedRequest.Id}";
+            Logging.SaveLog($"Reload request #{request.Id}: queued{replacedText}.");
             return;
         }
 
@@ -651,6 +678,15 @@ public class MainWindowViewModel : MyReactiveObject
 
         try
         {
+            if (!ReloadRequestMatchesCurrentState(request))
+            {
+                Logging.SaveLog(
+                    $"Reload request #{request.Id}: discarded as stale; requested profile={request.IndexId}, " +
+                    $"TUN={request.EnableTun}; current profile={_config.IndexId}, TUN={_config.TunModeItem.EnableTun}.");
+                return;
+            }
+
+            Logging.SaveLog($"Reload request #{request.Id}: started; source={request.Source}.");
             SetReloadEnabled(false);
 
             var profileItem = await ConfigHandler.GetDefaultServer(_config);
@@ -667,7 +703,10 @@ public class MainWindowViewModel : MyReactiveObject
 
             await Task.Run(async () =>
             {
-                await LoadCore(allResult.MainResult.Context, allResult.PreSocksResult?.Context);
+                await LoadCore(
+                    allResult.MainResult.Context,
+                    allResult.PreSocksResult?.Context,
+                    $"reload #{request.Id}: {request.Source}");
                 await SysProxyHandler.UpdateSysProxy(_config, false);
                 await Task.Delay(1000);
             });
@@ -695,11 +734,21 @@ public class MainWindowViewModel : MyReactiveObject
         {
             SetReloadEnabled(true);
             _reloadSemaphore.Release();
-            //If there is a next reload job, execute it.
-            if (_hasNextReloadJob)
+
+            var queuedRequest = Interlocked.Exchange(ref _queuedReloadRequest, null);
+            if (queuedRequest != null)
             {
-                _hasNextReloadJob = false;
-                await Reload();
+                if (!ReloadRequestMatchesCurrentState(queuedRequest))
+                {
+                    Logging.SaveLog(
+                        $"Reload request #{queuedRequest.Id}: discarded as stale before dequeue; " +
+                        $"requested profile={queuedRequest.IndexId}, TUN={queuedRequest.EnableTun}; " +
+                        $"current profile={_config.IndexId}, TUN={_config.TunModeItem.EnableTun}.");
+                }
+                else
+                {
+                    await Reload(queuedRequest);
+                }
             }
         }
     }
@@ -718,9 +767,9 @@ public class MainWindowViewModel : MyReactiveObject
         RxSchedulers.MainThreadScheduler.Schedule(() => BlReloadEnabled = enabled);
     }
 
-    private async Task LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext)
+    private async Task LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext, string requestSource)
     {
-        await CoreManager.Instance.LoadCore(mainContext, preContext);
+        await CoreManager.Instance.LoadCore(mainContext, preContext, requestSource);
     }
 
     #endregion core job
@@ -738,7 +787,7 @@ public class MainWindowViewModel : MyReactiveObject
 
         await ConfigHandler.SaveConfig(_config);
         await new UpdateService(_config, UpdateTaskHandler).UpdateGeoFileAll();
-        await Reload();
+        await Reload("regional preset changed");
     }
 
     #endregion Presets

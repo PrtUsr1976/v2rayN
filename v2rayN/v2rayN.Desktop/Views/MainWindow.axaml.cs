@@ -233,7 +233,7 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         {
             if (e.Key == Key.F5)
             {
-                ViewModel?.Reload();
+                ViewModel?.Reload("F5 hotkey");
             }
         }
     }
