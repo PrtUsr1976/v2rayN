@@ -125,7 +125,7 @@ public class XKeenExportService
                         profile,
                         spiderXOverride);
                     await File.WriteAllTextAsync(Path.Combine(itemDirectory, "04_outbounds.json"), json);
-                    readmeNames.Add($"{position} - {profile.Remarks}");
+                    readmeNames.Add($"{position} - {profile.Remarks}({reference.SubscriptionName})");
                     var link = originalLink ?? FmtHandler.GetShareUri(profile);
                     if (link.IsNotEmpty())
                     {
@@ -141,7 +141,7 @@ public class XKeenExportService
                 }
             }
 
-            var readme = string.Join(Environment.NewLine, readmeNames)
+            var readme = FormatReadmeNames(readmeNames)
                          + Environment.NewLine + Environment.NewLine
                          + string.Join(Environment.NewLine, readmeLinks)
                          + Environment.NewLine;
@@ -160,6 +160,13 @@ public class XKeenExportService
         }
 
         return new(errors);
+    }
+
+    public static string FormatReadmeNames(IEnumerable<string> names)
+    {
+        return string.Join(
+            Environment.NewLine,
+            names.Chunk(2).Select(pair => string.Join(", ", pair)));
     }
 
     public static (IReadOnlyList<XKeenSetDefinition> Sets, IReadOnlyList<string> Errors) Parse(

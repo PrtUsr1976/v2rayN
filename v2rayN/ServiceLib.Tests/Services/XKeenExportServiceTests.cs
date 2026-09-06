@@ -6,6 +6,21 @@ namespace ServiceLib.Tests.Services;
 public class XKeenExportServiceTests
 {
     [Fact]
+    public void FormatReadmeNames_WritesTwoServersPerLine()
+    {
+        var result = XKeenExportService.FormatReadmeNames(
+        [
+            "1 - Germany(xtls-2)",
+            "2 - Estonia(un1c4d3)",
+            "3 - Netherlands(arza)"
+        ]);
+
+        Assert.Equal(
+            $"1 - Germany(xtls-2), 2 - Estonia(un1c4d3){Environment.NewLine}3 - Netherlands(arza)",
+            result);
+    }
+
+    [Fact]
     public void Parse_PreservesContentOrderAcrossLines()
     {
         var result = XKeenExportService.Parse(
