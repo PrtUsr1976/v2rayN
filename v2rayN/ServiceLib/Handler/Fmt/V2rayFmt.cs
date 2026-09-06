@@ -24,6 +24,29 @@ public class V2rayFmt : BaseFmt
         return lstResult;
     }
 
+    private static int? GetPreSocksPort(JsonNode? config)
+    {
+        if (config?["inbounds"] is not JsonArray inbounds)
+        {
+            return null;
+        }
+
+        foreach (var inbound in inbounds)
+        {
+            if (!string.Equals(inbound?["protocol"]?.ToString(), "socks", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (int.TryParse(inbound?["port"]?.ToString(), out var port) && port is > 0 and <= 65535)
+            {
+                return port;
+            }
+        }
+
+        return null;
+    }
+
     public static ProfileItem? ResolveFull(string strData, string? subRemarks)
     {
         var config = JsonUtils.ParseJson(strData);
@@ -40,7 +63,8 @@ public class V2rayFmt : BaseFmt
         {
             CoreType = ECoreType.Xray,
             Address = fileName,
-            Remarks = config?["remarks"]?.ToString() ?? subRemarks ?? "v2ray_custom"
+            Remarks = config?["remarks"]?.ToString() ?? subRemarks ?? "v2ray_custom",
+            PreSocksPort = GetPreSocksPort(config)
         };
 
         return profileItem;

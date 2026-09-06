@@ -41,6 +41,7 @@ public static class SubscriptionHandler
                 // Process download result
                 if (await ProcessDownloadResult(config, item.Id, result, hashCode, updateFunc))
                 {
+                    await SubscriptionVlessExportService.ExportAsync(item, result);
                     successCount++;
                 }
 
@@ -110,6 +111,7 @@ public static class SubscriptionHandler
         var hasBasicAuthorization = Uri.TryCreate(url, UriKind.Absolute, out var uri)
                                     && uri.UserInfo.IsNotEmpty();
         Logging.SaveLog(AgentVSubscriptionService.BuildRequestHeadersLog(
+            url,
             effectiveUserAgent,
             agentVHeaders.Headers,
             hasBasicAuthorization));

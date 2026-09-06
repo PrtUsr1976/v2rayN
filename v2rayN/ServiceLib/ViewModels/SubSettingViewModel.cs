@@ -4,6 +4,7 @@ public class SubSettingViewModel : MyReactiveObject
 {
     public Interaction<string, bool> ShowYesNoInteraction { get; } = new();
     public Interaction<string, Unit> ShareSubInteraction { get; } = new();
+    public Interaction<Unit, string?> BrowseSubscriptionFileInteraction { get; } = new();
 
     public IObservableCollection<SubItem> SubItems { get; } = new ObservableCollectionExtended<SubItem>();
 
@@ -13,6 +14,7 @@ public class SubSettingViewModel : MyReactiveObject
     public IList<SubItem> SelectedSources { get; set; }
 
     public ReactiveCommand<Unit, Unit> SubAddCmd { get; }
+    public ReactiveCommand<Unit, Unit> SubImportFromFileCmd { get; }
     public ReactiveCommand<Unit, Unit> SubDeleteCmd { get; }
     public ReactiveCommand<Unit, Unit> SubEditCmd { get; }
     public ReactiveCommand<Unit, Unit> SubShareCmd { get; }
@@ -29,6 +31,11 @@ public class SubSettingViewModel : MyReactiveObject
         SubAddCmd = ReactiveCommand.CreateFromTask(async () =>
         {
             await EditSubAsync(true);
+        });
+        SubImportFromFileCmd = ReactiveCommand.CreateFromTask(async () =>
+        {
+            var fileName = await BrowseSubscriptionFileInteraction.Handle(Unit.Default);
+            await ImportFromFileAsync(fileName);
         });
         SubDeleteCmd = ReactiveCommand.CreateFromTask(async () =>
         {
@@ -80,6 +87,22 @@ public class SubSettingViewModel : MyReactiveObject
             await RefreshSubItems();
             IsModified = true;
         }
+    }
+
+    public async Task ImportFromFileAsync(string? fileName)
+    {
+        if (fileName.IsNullOrEmpty() || !File.Exists(fileName)) return;
+        var entries = SubscriptionFileImportService.Parse(File.ReadLines(fileName, Encoding.UTF8), SubItems.Select(x => x.Remarks));
+        if (entries.Count == 0) { NoticeManager.Instance.Enqueue(ResUI.OperationFailed); return; }
+        var imported = 0;
+        foreach (var entry in entries)
+        {
+            var item = new SubItem { Id = string.Empty, Remarks = entry.Remarks, Url = entry.Url };
+            if (await ConfigHandler.AddSubItem(_config, item) == 0) imported++;
+        }
+        await RefreshSubItems();
+        if (imported > 0) { IsModified = true; NoticeManager.Instance.Enqueue($"Imported subscriptions: {imported}"); }
+        else { NoticeManager.Instance.Enqueue(ResUI.OperationFailed); }
     }
 
     private async Task DeleteSubAsync()

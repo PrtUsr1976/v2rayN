@@ -39,7 +39,7 @@ The repository is not the official upstream v2rayN repository.
 
 ### Subscription headers
 
-The application reads subscription request settings from `agent_v`.
+The application first reads subscription request settings from `hwid` next to the executable and falls back to `agent_v` when `hwid` is absent. Both files support `key=value` and whitespace-separated `key value` formats.
 
 Supported keys include:
 
@@ -107,7 +107,7 @@ Custom Windows x64 workflows are manual-only.
 - Medium: bundled .NET, no proxy cores.
 - Full: bundled .NET and proxy cores.
 
-All custom Windows build variants include `agent_v` next to `v2rayN.exe`.
+All custom Windows build variants include the fallback `agent_v` next to `v2rayN.exe`; a local `hwid` file, when supplied by the user, takes precedence and must not contain real identifiers in Git.
 
 Do not add automatic `push`, `pull_request`, `release`, or scheduled triggers unless the user explicitly requests them.
 
@@ -128,6 +128,8 @@ Git history is the authoritative record of completed changes. Important commits 
 Before changing behavior, inspect the current code and relevant commits instead of relying only on this summary.
 
 ## PowerShell scripts
+
+Before creating or running PowerShell scripts, read and follow [`SCRIPTS_RULES.md`](SCRIPTS_RULES.md). Its fixed-command and task-file rules are mandatory and take precedence over the shorter summary below.
 
 For command-line work on Windows, create and reuse PowerShell scripts under:
 

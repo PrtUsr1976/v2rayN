@@ -25,6 +25,7 @@ public class DownloaderHelper
         Uri uri = new(url);
         //Authorization Header
         var headers = new WebHeaderCollection();
+        ApplyUserAgent(headers, userAgent);
         if (uri.UserInfo.IsNotEmpty())
         {
             headers.Add(HttpRequestHeader.Authorization, "Basic " + Utils.Base64Encode(uri.UserInfo));
@@ -34,7 +35,7 @@ public class DownloaderHelper
         var requestConfiguration = new RequestConfiguration()
         {
             Headers = headers,
-            UserAgent = userAgent,
+            UserAgent = null,
             ConnectTimeout = connectTimeout * 1000,
             Proxy = webProxy
         };
@@ -200,6 +201,16 @@ public class DownloaderHelper
         await downloader.DownloadFileTaskAsync(url, fileName, cts.Token);
 
         downloadOpt = null;
+    }
+
+    internal static void ApplyUserAgent(WebHeaderCollection target, string? userAgent)
+    {
+        if (userAgent.IsNullOrEmpty())
+        {
+            return;
+        }
+
+        target.Set(HttpRequestHeader.UserAgent, userAgent);
     }
 
     private static void AddRequestHeaders(

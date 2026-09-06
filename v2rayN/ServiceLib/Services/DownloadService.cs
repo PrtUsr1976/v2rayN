@@ -180,7 +180,8 @@ public class DownloadService
             {
                 Proxy = webProxy,
                 UseProxy = webProxy != null,
-                ConnectTimeout = TimeSpan.FromSeconds(connectTimeout)
+                ConnectTimeout = TimeSpan.FromSeconds(connectTimeout),
+                AutomaticDecompression = DecompressionMethods.All
             };
             var certificateChainPolicy = CertPemManager.Instance.BuildCertificateChainPolicy();
             if (certificateChainPolicy != null)
@@ -198,7 +199,7 @@ public class DownloadService
             {
                 userAgent = Utils.GetVersion(false);
             }
-            client.DefaultRequestHeaders.UserAgent.TryParseAdd(userAgent);
+            ApplyUserAgent(client.DefaultRequestHeaders, userAgent);
             ApplyRequestHeaders(client.DefaultRequestHeaders, requestHeaders);
 
             Uri uri = new(url);
@@ -260,6 +261,12 @@ public class DownloadService
             }
         }
         return null;
+    }
+
+    internal static void ApplyUserAgent(HttpRequestHeaders target, string userAgent)
+    {
+        target.Remove("User-Agent");
+        target.TryAddWithoutValidation("User-Agent", userAgent);
     }
 
     private static void ApplyRequestHeaders(

@@ -87,6 +87,105 @@ public class FmtHandlerTests
         uri.Should().BeNull();
     }
 
+    [Fact]
+    public void V2rayResolveFull_ShouldDetectSocksInboundPort()
+    {
+        const string config =
+            """
+            {
+              "remarks": "HAPP profile",
+              "inbounds": [
+                { "listen": "127.0.0.1", "port": 10809, "protocol": "http" },
+                { "listen": "127.0.0.1", "port": 10808, "protocol": "SOCKS" }
+              ],
+              "outbounds": [],
+              "routing": {}
+            }
+            """;
+
+        var profile = V2rayFmt.ResolveFull(config, null);
+
+        try
+        {
+            profile.Should().NotBeNull();
+            profile!.PreSocksPort.Should().Be(10808);
+        }
+        finally
+        {
+            DeleteTemporaryConfig(profile?.Address);
+        }
+    }
+
+    [Fact]
+    public void V2rayResolveFull_ShouldLeavePreSocksPortEmptyWithoutSocksInbound()
+    {
+        const string config =
+            """
+            {
+              "inbounds": [
+                { "listen": "127.0.0.1", "port": 10809, "protocol": "http" }
+              ],
+              "outbounds": [],
+              "routing": {}
+            }
+            """;
+
+        var profile = V2rayFmt.ResolveFull(config, null);
+
+        try
+        {
+            profile.Should().NotBeNull();
+            profile!.PreSocksPort.Should().BeNull();
+        }
+        finally
+        {
+            DeleteTemporaryConfig(profile?.Address);
+        }
+    }
+
+    [Fact]
+    public void V2rayResolveFullArray_ShouldDetectPortForEachConfiguration()
+    {
+        const string configs =
+            """
+            [
+              {
+                "inbounds": [{ "port": 10808, "protocol": "socks" }],
+                "outbounds": [],
+                "routing": {}
+              },
+              {
+                "inbounds": [{ "port": 20808, "protocol": "socks" }],
+                "outbounds": [],
+                "routing": {}
+              }
+            ]
+            """;
+
+        var profiles = V2rayFmt.ResolveFullArray(configs, "HAPP");
+
+        try
+        {
+            profiles.Should().NotBeNull();
+            profiles!.Select(x => x.PreSocksPort).Should().Equal(10808, 20808);
+        }
+        finally
+        {
+            foreach (var profile in profiles ?? [])
+            {
+                DeleteTemporaryConfig(profile.Address);
+            }
+        }
+    }
+
+    private static void DeleteTemporaryConfig(string? fileName)
+    {
+        if (fileName.IsNotEmpty() && File.Exists(fileName))
+        {
+            File.Delete(fileName);
+        }
+    }
+
     private static ProfileItem ExportThenImport(ProfileItem source)
     {
         var uri = FmtHandler.GetShareUri(source);

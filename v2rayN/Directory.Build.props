@@ -2,6 +2,12 @@
 
     <PropertyGroup>
         <Version>7.24.1</Version>
+        <AssemblyVersion>7.24.1.0</AssemblyVersion>
+        <FileVersion>7.24.1.0</FileVersion>
+        <InformationalVersion>7.24.1.alex</InformationalVersion>
+        <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+        <Product>v2rayN 7.24.1.alex</Product>
+        <AssemblyTitle>v2rayN 7.24.1.alex</AssemblyTitle>
     </PropertyGroup>
 
     <PropertyGroup>
