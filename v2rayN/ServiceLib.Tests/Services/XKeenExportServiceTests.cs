@@ -74,6 +74,24 @@ public class XKeenExportServiceTests
     }
 
     [Fact]
+    public void FindProfile_FallsBackToAndConditionsInRemarks()
+    {
+        var expected = new ProfileItem
+        {
+            Address = "45.152.198.190",
+            Remarks = "Sweden | RU"
+        };
+        var profiles = new[]
+        {
+            new ProfileItem { Address = "other.example.com", Remarks = "Sweden | US" },
+            new ProfileItem { Address = "peru.example.com", Remarks = "Peru" },
+            expected
+        };
+
+        Assert.Same(expected, XKeenExportService.FindProfile(profiles, "Sweden&&RU"));
+    }
+
+    [Fact]
     public void Result_UsesRequiredSuccessMessage()
     {
         var result = new XKeenExportResult([]);

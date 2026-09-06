@@ -241,9 +241,33 @@ public class XKeenExportService
 
     public static ProfileItem? FindProfile(IEnumerable<ProfileItem> profiles, string serverPrefix)
     {
-        var addressPrefix = serverPrefix.Trim() + ".";
-        return profiles.FirstOrDefault(profile =>
+        var profileList = profiles.ToList();
+        var selector = serverPrefix.Trim();
+        var addressPrefix = selector + ".";
+        var addressMatch = profileList.FirstOrDefault(profile =>
             profile.Address.StartsWith(addressPrefix, StringComparison.OrdinalIgnoreCase));
+        if (addressMatch is not null)
+        {
+            return addressMatch;
+        }
+
+        var nameConditions = selector.Split(
+            "&&",
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (nameConditions.Length == 0)
+        {
+            return null;
+        }
+
+        return profileList.FirstOrDefault(profile =>
+        {
+            var remarks = profile.Remarks ?? string.Empty;
+            return nameConditions.All(condition =>
+                Regex.IsMatch(
+                    remarks,
+                    $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(condition)}(?![\p{{L}}\p{{N}}])",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
+        });
     }
 
     public static string? FindOriginalVlessLink(
